@@ -1,0 +1,24 @@
+# macOS
+.DS_Store
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+*.egg-info/
+.pytest_cache/
+.ruff_cache/
+
+# Local data: user documents, SQLite databases, vector indexes.
+# Never commit these. They are the user's private knowledge base.
+data/
+*.db
+*.sqlite3
+
+# Secrets / local overrides
+.env
+.env.local
+
+# Flutter (added in a later milestone)
+desktop/build/
+desktop/.dart_tool/

@@ -1,0 +1,43 @@
+[project]
+name = "voicelm"
+version = "0.1.0"
+description = "Privacy-first, voice-first personal knowledge workspace — AI backend"
+requires-python = ">=3.13"
+dependencies = [
+    "fastapi>=0.115",
+    "uvicorn[standard]>=0.32",
+]
+
+# PEP 735 dependency groups. These are installed for local development but are not
+# dependencies of the shipped package, so a future deployment does not carry pytest.
+[dependency-groups]
+dev = [
+    "httpx2>=2.13.0",
+    "pytest>=8.3",
+    "ruff>=0.8",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+# Required because of the src/ layout (ADR-0011): tell the build backend where the
+# package actually lives, since it is not at the project root.
+[tool.hatch.build.targets.wheel]
+packages = ["src/voicelm"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+
+[tool.ruff]
+line-length = 100
+
+[tool.ruff.lint]
+select = [
+    "E",   # pycodestyle errors
+    "F",   # pyflakes: undefined names, unused imports
+    "I",   # import sorting
+    "UP",  # prefer modern Python idioms
+    "B",   # bugbear: likely bugs
+    "SIM", # simplifications
+]
