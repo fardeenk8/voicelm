@@ -34,8 +34,11 @@ cd backend
 uv sync                 # create the virtual environment and install dependencies
 uv run pytest           # run the tests
 uv run ruff check .     # lint
-uv run uvicorn voicelm.api.app:app --reload
+uv run uvicorn --app-dir src voicelm.api.app:app --reload
 ```
+
+`--app-dir src` is required rather than optional; see ADR-0012 for why we do not rely on
+the editable install's import path.
 
 Then check that it is alive:
 

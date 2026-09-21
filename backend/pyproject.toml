@@ -28,6 +28,9 @@ packages = ["src/voicelm"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+# Import the package from the source tree rather than relying on the editable install's
+# .pth file, which macOS silently disables. See ADR-0012.
+pythonpath = ["src"]
 
 [tool.ruff]
 line-length = 100

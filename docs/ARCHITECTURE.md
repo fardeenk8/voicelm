@@ -53,8 +53,29 @@ The entire product brain. Runs as a standalone process and is useful without any
 | `storage/` | SQLite and Qdrant access. |
 | `api/` | FastAPI routes — a thin shell over the modules above. |
 
-Only `api/` and a minimal package root exist today. The rest is created as each
-milestone needs it, rather than as empty folders up front.
+`domain/`, `ingestion/`, and `api/` exist today. The rest is created as each milestone
+needs it, rather than as empty folders up front.
+
+### The ingestion pipeline
+
+```
+load_source(path)          read UTF-8, reject anything else (ADR-0015)
+      │                    id = sha256 of content, so re-ingesting is idempotent
+      ▼
+clean_text(raw)            NFC, line endings, invisible chars, blank-line runs
+      │                    conservative: intra-line whitespace untouched (ADR-0013)
+      ▼
+chunk_document(source)     paragraphs → sentences → hard cut (ADR-0014)
+      │                    overlap by extending each chunk's start backwards
+      ▼
+list[Chunk]                each carrying source_id, offsets, and ordinal
+```
+
+Chunking works entirely in `(start, end)` character spans and only slices out strings at
+the end. That is what makes the provenance invariant true by construction rather than by
+convention:
+
+    source.text[chunk.start_char : chunk.end_char] == chunk.text
 
 ### Ollama — local LLM
 A local HTTP server that runs quantized language models using the Mac's Metal GPU. Our

@@ -80,12 +80,36 @@ a problem down:
    command broke it again. **That intermittency was the most important clue:** it meant
    the artifact was in a bad state rather than the configuration being wrong.
 
-Deleting `.venv` entirely and re-running `uv sync` fixed it permanently. Honest limitation:
-we never fully explained *why* `site` skipped that particular file, only that a clean
-rebuild resolves it reproducibly. The lesson for next time is that when a virtual
-environment misbehaves in a way that contradicts its own configuration, recreating it is
-cheap and should be tried early. Environments are disposable; that is the whole point of
-having a lockfile.
+5. Check the file's *metadata*, not just its contents. This is where the answer was.
+
+**The root cause: macOS file flags.** Beyond permissions, macOS files carry *flags*, one of
+which is `UF_HIDDEN` — a marker telling Finder not to display the file. Our `.pth` had it
+set, which `ls -la` only hints at and `stat -f '%Sf'` shows outright.
+
+CPython's `site.py` contains an explicit early return: if a `.pth` file has `UF_HIDDEN`
+set, it is skipped **silently**, with no warning. So three independently reasonable
+behaviours combined into one baffling failure:
+
+1. uv marks `.venv` as hidden on macOS so it does not clutter Finder.
+2. macOS propagates the hidden flag to files created inside a hidden directory.
+3. CPython refuses to process hidden `.pth` files.
+
+Each step is defensible alone. Together they make an editable install that looks perfect
+and does nothing. Clearing the flag with `chflags -R nohidden .venv` fixes it immediately,
+which is how we confirmed the diagnosis.
+
+**Why we did not stop there.** Upgrading uv (0.12.5 → 0.12.17) stopped *fresh* venvs from
+being affected, but reinstalling the package into an existing venv still reintroduced the
+flag. A fix that depends on an OS quirk, a uv version, and a CPython behaviour all lining
+up is not a fix. Instead we told pytest to import from the source tree directly with
+`pythonpath = ["src"]`, and pass `--app-dir src` when running the server. Neither depends
+on the `.pth` mechanism at all. See ADR-0012 for what that costs us and how we plan to
+recover it.
+
+The general lessons worth keeping: intermittent failures point at state, not
+configuration. When a system contradicts its own visible configuration, check metadata you
+have not looked at yet. And prefer a fix that removes the dependency over one that
+patches the symptom.
 
 ### Reading deprecation warnings instead of ignoring them
 The test run warned that using `httpx` with Starlette's `TestClient` is deprecated in
@@ -113,8 +137,76 @@ to two of them and not the third.
 
 ---
 
-## Queued for Milestone 1
+---
 
-To be filled in as we cover them: embeddings, cosine similarity, chunking strategy,
-approximate nearest neighbor search (HNSW), tokens and context windows, quantization, and
-prompt construction for grounded answers.
+## Milestone 1, Step 1 — Ingestion (2026-09-20)
+
+### Why we chunk at all
+Two reasons, and the second is the one that is easy to miss. A whole document does not fit
+in a model's input — that is the obvious one. But more importantly, **one embedding can
+only represent one topic well.** Embed an 80-page manual and you get the average of eighty
+pages, which is close to nothing in particular and matches no specific question sharply.
+
+That creates a real tradeoff with a bad outcome at each end. Chunks too large: the chunk
+holds the answer plus unrelated text, its embedding is diluted across topics, and it stops
+matching precise questions. Chunks too small: the chunk loses the context that made it
+meaningful, so "the third approach failed for the same reason" becomes useless.
+
+### Why overlap exists
+If a chunk boundary lands inside the sentence containing an answer, neither neighbouring
+chunk holds the complete fact. Repeating the tail of each chunk at the start of the next
+guarantees any short fact appears intact somewhere.
+
+The implementation detail is the interesting part: we add overlap by moving a chunk's
+*start offset backwards*, not by concatenating strings. That keeps every chunk one
+contiguous slice of the document, so offsets remain meaningful. Concatenating text would
+have broken the round-trip invariant immediately.
+
+### Working in spans, not strings
+The whole chunking module manipulates `(start, end)` integer pairs and only slices out
+text at the very end. This is why `source.text[chunk.start_char:chunk.end_char] ==
+chunk.text` is true *by construction* rather than by careful bookkeeping. Choosing a
+representation that makes the invariant unavoidable is usually better than choosing one
+that requires discipline to maintain.
+
+### Frozen dataclasses
+`@dataclass(frozen=True)` makes instances immutable — assigning to a field raises
+`FrozenInstanceError`. Used here deliberately: once provenance is attached to a chunk,
+later code cannot quietly change it. A bug becomes an exception instead of a wrong
+citation.
+
+### Unicode normalisation, which looks like a detail and is not
+"é" can be a single code point or "e" followed by a combining accent. The two are visually
+identical and compare as unequal in Python, so without normalising to NFC the same word
+in two documents would produce two different embeddings and retrieval would quietly miss
+matches. `unicodedata.normalize("NFC", text)` collapses them.
+
+### Testing an invariant instead of an example
+Most tests assert "this input gives that output." The most valuable test we wrote asserts
+a *property* across many inputs: for every chunk of every document, the offsets slice back
+to exactly the chunk text. If that ever fails, every citation VoiceLM produces is a lie,
+so it is worth checking mechanically rather than trusting.
+
+### Two bugs the tests caught, and what each taught
+**`zip(chunks, chunks[1:], strict=True)` always raises.** `strict=True` demands equal
+lengths, and `chunks[1:]` is by definition one shorter. The intent — walk consecutive
+pairs — is spelled `itertools.pairwise(chunks)`. A case of reaching for a safety feature
+in a place where it contradicts the goal.
+
+**Chunks do not tile the document.** A test asserted that each chunk starts exactly where
+the previous one ended; it failed by two characters. Those two characters are the `\n\n`
+between paragraphs, which our paragraph splitter drops on purpose so chunk text never
+begins or ends with a decorative blank line. The test encoded an assumption about the
+implementation rather than a requirement of the product. The requirement is that no
+*content* is lost, so the assertion became: whatever falls between two consecutive chunks
+contains only whitespace. Worth noticing that the failing test was the wrong test — which
+is not the same thing as the test being useless, since it forced the behaviour to be
+decided consciously and written down (ADR-0014).
+
+---
+
+## Queued for Milestone 1, Steps 2 and 3
+
+To be filled in as we cover them: embeddings and vector space, cosine similarity, tokens
+and context windows, quantization, prompt construction for grounded answers, and later
+approximate nearest neighbour search (HNSW) when Qdrant arrives.
