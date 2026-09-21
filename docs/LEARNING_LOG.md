@@ -412,8 +412,39 @@ that is Qdrant and SQLite having drifted, and silence would drop a hit.
 
 ---
 
-## Queued for Milestone 1B, Steps 2–4
+## Milestone 1B, Step 2 — Qdrant local mode (2026-09-21)
 
-HNSW and Qdrant local mode, the dual-write orchestrator, and splitting the CLI into
-`ingest` / `ask` / `sources`.
+### What Qdrant is, at this scale
+A specialist for "here is a vector, which stored vectors are nearest?". Our brute-force
+store does that with a Python loop. Qdrant does it with a graph index called HNSW
+(Hierarchical Navigable Small World): it does not compare against every vector. It jumps
+across a network of "nearby" points and returns an *approximate* nearest neighbour.
+
+Approximate means it might, in theory, miss the true closest vector. At a handful of
+chunks it agrees exactly with brute force — we asserted that, and that is why
+`InMemoryVectorStore` was not deleted.
+
+### Local mode
+`QdrantClient(path="...")` runs the engine inside our Python process against a directory.
+No Docker, no port 6333. Closing and reopening the same path still finds the vectors,
+which is the whole difference from the in-memory list.
+
+### Why the search hit has no text
+`VectorHit` carries `chunk_id`, `source_id`, and a score. Not the chunk text. If Qdrant
+also stored the text we would have two copies that can drift. SQLite remains the only
+place a citation can quote from. Step 3 is the join: Qdrant returns ids, SQLite loads
+those rows *in that order*.
+
+### Point ids
+Qdrant only accepts UUIDs or integers as point ids. Our chunk ids are strings
+(`{source_uuid}:0`), so we derive a UUID with `uuid5` from the chunk id. The real id lives
+in the payload. Deterministic means re-upserting the same chunk overwrites the same point
+instead of creating a duplicate.
+
+---
+
+## Queued for Milestone 1B, Steps 3–4
+
+The dual-write orchestrator (`KnowledgeBase`), skip-if-unchanged, and splitting the CLI
+into `ingest` / `ask` / `sources`.
 

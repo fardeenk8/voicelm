@@ -406,3 +406,20 @@ at different paths are two rows.
 **Alternatives.** Keep content-hash ids (simpler; identical files collapse; last path
 wins). Rejected for a workspace.
 
+---
+
+## ADR-0020 — Qdrant stores ids, not chunk text
+
+**Date:** 2026-09-21 · **Status:** Accepted
+
+**Decision.** Each Qdrant point's payload is `chunk_id`, `source_id`, `embedding_model`,
+and `dimensions`. The chunk text is not duplicated there.
+
+**Why.** Two copies of the text can drift. Citations must quote SQLite, which is already
+the canonical cleaned document (ADR-0013). Search therefore returns `VectorHit` ids;
+loading the rows is a second step.
+
+**Tradeoff.** Every question pays one extra SQLite lookup. At this scale that is noise
+compared with embedding the question.
+
+

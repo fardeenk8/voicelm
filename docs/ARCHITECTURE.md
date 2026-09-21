@@ -53,8 +53,10 @@ The entire product brain. Runs as a standalone process and is useful without any
 | `storage/` | SQLite and Qdrant access. |
 | `api/` | FastAPI routes — a thin shell over the modules above. |
 
-All of the above except Qdrant exists today, plus a thin `cli.py`. `storage/sqlite.py` is
-the catalog of sources and chunks. Vectors are still in-memory until Milestone 1B Step 2.
+All of the above exists today except the dual-write `KnowledgeBase` orchestrator. Vectors
+live in Qdrant local mode (`storage/qdrant.py`); source and chunk text live in SQLite
+(`storage/sqlite.py`). The CLI still re-embeds in memory on every `ask` until Step 3
+wires the two stores together.
 
 ### What makes an answer grounded
 
@@ -79,7 +81,7 @@ something has to be dropped it is the least relevant excerpt, on purpose.
 
 ```
 load_source(path)          read UTF-8, reject anything else (ADR-0015)
-      │                    id = sha256 of content, so re-ingesting is idempotent
+      │                    id = UUID; content_hash = SHA-256 of cleaned text
       ▼
 clean_text(raw)            NFC, line endings, invisible chars, blank-line runs
       │                    conservative: intra-line whitespace untouched (ADR-0013)
