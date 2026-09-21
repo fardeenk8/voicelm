@@ -552,5 +552,36 @@ Ingest writes the catalog first (source of truth), then vectors. Delete drops ve
 first, then the catalog. If the second step fails, ingest's repair rule (incomplete
 index) still applies. The other order would leave search hits SQLite cannot load.
 
+---
+
+## Milestone 1E — Flutter desktop (2026-09-21)
+
+### The widget tree is not HTML
+Flutter draws its own pixels. `build()` must only *read* state. Fetching HTTP inside
+`build()` would fire on every rebuild. We fetch in `initState` and on button presses,
+store the result, and let `build()` describe what that state looks like.
+
+### One doorway, now in Dart
+`VoiceLmApi` is the UI twin of `KnowledgeBase`: widgets are not allowed to import
+`package:http` any more than `cli.py` is allowed to import SQLite. A future iOS client
+rewrites only this class if the URL changes; the screen does not.
+
+### Sandbox and ATS
+A sandboxed Mac app cannot call `127.0.0.1` or read an arbitrary path unless we say so
+in entitlements. `NSAllowsLocalNetworking` is what lets HTTP (not HTTPS) to localhost
+through App Transport Security.
+
+### file_picker 13
+`FilePicker.platform.pickFiles` is gone. The new API is `FilePicker.pickFiles(...)`
+returning a list, and `readAsBytes()` on the file. The analyzer caught the old call
+before we ever ran the app.
+
+### Codesign vs Documents
+The repo lives under `Documents`. File Provider attaches `com.apple.FinderInfo` to the
+built `.app`, and `codesign` refuses it: "resource fork, Finder information, or similar
+detritus not allowed." Debug builds skip signing so `flutter run` works. Release signing
+will need the same xattr strip, or the project moved off iCloud-synced folders.
+
+
 
 

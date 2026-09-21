@@ -1,0 +1,8 @@
+#include "../../Flutter/Flutter-Debug.xcconfig"
+#include "Warnings.xcconfig"
+
+// The project lives under Documents, and File Provider attaches FinderInfo to the
+// built .app. Ad-hoc codesign then refuses it ("resource fork ... not allowed").
+// Debug builds skip signing so `flutter run` works; Release still signs.
+CODE_SIGNING_ALLOWED = NO
+CODE_SIGNING_REQUIRED = NO

@@ -544,3 +544,27 @@ are not running concurrent writers.
 does. Files the CLI indexed in place are not deleted from disk; API-owned copies are.
 
 
+## ADR-0027 — Flutter talks only through VoiceLmApi; first screen is one StatefulWidget
+
+**Date:** 2026-09-21 · **Status:** Accepted
+
+**Decision.** `desktop/` is a macOS Flutter app. `lib/api.dart` is the only file that
+knows `http://127.0.0.1:8000` and HTTP verbs. Widgets call `VoiceLmApi`. The first
+screen is a `StatefulWidget` — no Riverpod/Bloc until a second screen shares state.
+
+macOS sandbox entitlements: outgoing network (`network.client`) and user-selected files.
+App Transport Security allows local networking so `http://127.0.0.1` is not blocked.
+
+**Why not embed the backend.** Packaging Python inside a `.app` is still deferred. Two
+processes, started by hand, is honest during development.
+
+**Why not Flutter web first.** Xcode is now installed. The product target is macOS.
+`file_picker` and `package:http` stay platform-neutral so web can be added later without
+rewriting `api.dart`.
+
+**Debug signing.** The tree is under `Documents`, so File Provider tags the built `.app`
+and ad-hoc codesign fails. Debug sets `CODE_SIGNING_ALLOWED=NO`. That is a local
+workaround, not a shipping decision.
+
+
+

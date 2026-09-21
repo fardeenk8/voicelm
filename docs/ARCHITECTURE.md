@@ -41,8 +41,8 @@ involves a socket. Swapping to a real Qdrant server later is a connection-string
 ## Components
 
 ### Flutter desktop app (`desktop/`)
-Renders the UI and calls the backend API. Contains no AI logic. Added in a later
-milestone — there is deliberately nothing to show until the engine works.
+Renders the UI and calls the backend API. Contains no AI logic. `lib/api.dart` is the
+only file that knows the server URL; widgets call `VoiceLmApi` and never `package:http`.
 
 ### Python backend (`backend/`)
 The entire product brain. Runs as a standalone process and is useful without any UI.
@@ -181,7 +181,7 @@ fact.
 | Ollama | macOS background service | `127.0.0.1:11434` |
 | Qdrant | In-process (Phase 1) | none — local mode |
 | SQLite | In-process | a file on disk |
-| Flutter app | `flutter run` | n/a |
+| Flutter app | `flutter run -d macos` | talks to `:8000` |
 
 All addresses are loopback only. Nothing binds to a public interface.
 

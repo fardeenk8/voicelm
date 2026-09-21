@@ -7,12 +7,11 @@ Everything runs locally. Your documents never leave your machine.
 
 ## Status
 
-**Milestone 1D — the library is on HTTP.** Import `.txt`, `.md`, or `.pdf` files from
-the CLI or by uploading them to the local API. Answers come back grounded in your
-documents with citations to character ranges and, for PDFs, to the physical page. Delete
-works from both the CLI and `DELETE /sources/{id}`.
+**Milestone 1E — a macOS window over that library.** Import `.txt`, `.md`, or `.pdf`
+from the CLI, the HTTP API, or the Flutter desktop app. Answers come back grounded in
+your documents with citations. The UI talks only to `http://127.0.0.1:8000`.
 
-Not yet: scanned PDFs (no OCR), streaming tokens (SSE), or any UI.
+Not yet: scanned PDFs (no OCR), streaming tokens (SSE), or voice.
 
 See [`docs/PRODUCT_SPEC.md`](docs/PRODUCT_SPEC.md) for where this is going and
 [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) for how it is put together.
@@ -22,7 +21,7 @@ See [`docs/PRODUCT_SPEC.md`](docs/PRODUCT_SPEC.md) for where this is going and
 ```
 docs/        Product spec, architecture, decision record, learning log
 backend/     Python AI service (FastAPI) — the brain. Runs standalone.
-desktop/     Flutter macOS app — added in a later milestone.
+desktop/     Flutter macOS app — presentation only. Calls the HTTP API.
 ```
 
 The backend is deliberately independent of the UI: it must remain fully runnable and
@@ -122,3 +121,22 @@ curl -X POST http://127.0.0.1:8000/ask \
 Uploaded files are stored under `data/files/` so the library owns a copy. Interactive
 documentation is at <http://127.0.0.1:8000/docs>. Token streaming (SSE) is not wired yet;
 `/ask` returns the complete answer.
+
+## The desktop app
+
+Requires the backend already running. From the repo root:
+
+```bash
+cd desktop
+flutter run -d macos
+```
+
+The window lists the library, uploads a file, and asks a question. It never opens
+SQLite, Qdrant, or Ollama — only `http://127.0.0.1:8000`. Override the URL with
+`--dart-define=VOICELM_API=http://127.0.0.1:8000` if needed.
+
+```bash
+cd desktop
+flutter test
+flutter analyze
+```
