@@ -518,3 +518,29 @@ retrieval bug. OCR is Phase 2.
 NFKC to Markdown would also rewrite superscripts and compatibility characters we currently
 leave alone on purpose.
 
+
+## ADR-0026 — HTTP is a thin caller of KnowledgeBase; uploads own a copy; JSON not SSE yet
+
+**Date:** 2026-09-21 · **Status:** Accepted
+
+**Decision.** `GET/POST/DELETE /sources` and `POST /ask` call `KnowledgeBase` the same
+way the CLI does. Clients upload file bytes; the library stores a copy under
+`data/files/` and catalogs that path. `/ask` returns a complete JSON answer. SSE token
+streaming is deferred until a UI exists to consume it.
+
+**Why upload rather than a path.** A Flutter desktop app on this Mac could send a path,
+but a future phone or browser cannot share a filesystem with the backend. Owning a copy
+also means moving the original file does not orphan the library.
+
+**Why JSON first.** ADR-0004 still stands for streaming, but streaming needs an Ollama
+client that yields tokens. A complete answer is what the CLI already returns and is
+enough for a first Flutter screen.
+
+**Why `check_same_thread=False` on SQLite.** FastAPI runs `def` routes in a thread pool.
+The connection is opened at startup on the main thread. This process is single-user; we
+are not running concurrent writers.
+
+**Consequence.** `voicelm remove ID` exists so the CLI can do what `DELETE /sources/{id}`
+does. Files the CLI indexed in place are not deleted from disk; API-owned copies are.
+
+

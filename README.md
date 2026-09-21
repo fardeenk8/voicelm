@@ -7,12 +7,12 @@ Everything runs locally. Your documents never leave your machine.
 
 ## Status
 
-**Milestone 1C — PDFs cite a page.** Import `.txt`, `.md`, or `.pdf` files once and ask
-questions about them from the command line. Answers come back grounded in your documents
-with citations to exact character ranges, and for PDFs, to the physical page a viewer
-would show. Metadata lives in SQLite and vectors live in Qdrant, both on disk.
+**Milestone 1D — the library is on HTTP.** Import `.txt`, `.md`, or `.pdf` files from
+the CLI or by uploading them to the local API. Answers come back grounded in your
+documents with citations to character ranges and, for PDFs, to the physical page. Delete
+works from both the CLI and `DELETE /sources/{id}`.
 
-Not yet: scanned PDFs (no OCR), an HTTP API for ingestion or asking, or any UI.
+Not yet: scanned PDFs (no OCR), streaming tokens (SSE), or any UI.
 
 See [`docs/PRODUCT_SPEC.md`](docs/PRODUCT_SPEC.md) for where this is going and
 [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) for how it is put together.
@@ -88,8 +88,9 @@ Sources:
       "...CataractNet is a lightweight CNN designed for fundus images..."
 ```
 
-`voicelm sources` lists what is in the library. Re-running `ingest` on an unchanged file
-is reported as `skipped` and costs nothing; edit the file and it is re-embedded in place,
+`voicelm sources` lists what is in the library (including each document's id).
+`voicelm remove ID` drops a document. Re-running `ingest` on an unchanged file is
+reported as `skipped` and costs nothing; edit the file and it is re-embedded in place,
 keeping the same identity.
 
 Useful options: `--top-k` sets how many excerpts are retrieved; `--chunk-chars` and
@@ -101,15 +102,23 @@ If the documents do not contain the answer, VoiceLM says so rather than inventin
 
 ## The HTTP API
 
-The API currently exposes only a health check. Ingesting and asking over HTTP comes in a
-later milestone; for now the CLI is the only way in.
+The same library the CLI uses, over JSON. Start it from `backend/`:
 
 ```bash
 uv run uvicorn --app-dir src voicelm.api.app:app --reload
-
-curl http://127.0.0.1:8000/health
-# {"status":"ok","version":"0.1.0"}
 ```
 
-Interactive API documentation is generated automatically at
-<http://127.0.0.1:8000/docs>.
+```bash
+curl http://127.0.0.1:8000/health
+# {"status":"ok","version":"0.1.0"}
+
+curl -F file=@notes.md http://127.0.0.1:8000/sources
+curl http://127.0.0.1:8000/sources
+curl -X POST http://127.0.0.1:8000/ask \
+  -H 'Content-Type: application/json' \
+  -d '{"question": "Why did we choose that approach?"}'
+```
+
+Uploaded files are stored under `data/files/` so the library owns a copy. Interactive
+documentation is at <http://127.0.0.1:8000/docs>. Token streaming (SSE) is not wired yet;
+`/ask` returns the complete answer.

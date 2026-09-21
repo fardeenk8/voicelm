@@ -6,7 +6,6 @@ progress lines.
 """
 
 import argparse
-import os
 import sys
 import time
 from pathlib import Path
@@ -20,18 +19,9 @@ from voicelm.ingestion.chunking import ChunkingConfig
 from voicelm.ingestion.loader import UndecodableFile, UnsupportedFileType
 from voicelm.ingestion.pdf import PdfExtractionError
 from voicelm.knowledge import KnowledgeBase
+from voicelm.paths import default_data_dir
 
 QUOTE_PREVIEW_CHARS = 220
-
-
-def default_data_dir() -> Path:
-    """Where the catalog and vector index live.
-
-    Override with VOICELM_DATA_DIR or --data-dir. Default is ./data in the current
-    working directory (typically backend/).
-    """
-    raw = os.environ.get("VOICELM_DATA_DIR")
-    return Path(raw) if raw else Path.cwd() / "data"
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -84,6 +74,9 @@ def build_parser() -> argparse.ArgumentParser:
 
     subcommands.add_parser("sources", help="list documents in the local library")
 
+    remove = subcommands.add_parser("remove", help="drop a document from the local library")
+    remove.add_argument("source_id", help="the id printed by `voicelm sources`")
+
     return parser
 
 
@@ -109,6 +102,8 @@ def main(
             return _ask(arguments, base, chat_model)
         if arguments.command == "sources":
             return _list_sources(base)
+        if arguments.command == "remove":
+            return _remove(arguments, base)
         raise ValueError(f"unknown command {arguments.command}")
     except (
         UnsupportedFileType,
@@ -181,7 +176,17 @@ def _list_sources(base: KnowledgeBase) -> int:
     for record in records:
         chunks = base.chunk_count(record.source.id)
         plural = "chunk" if chunks == 1 else "chunks"
-        print(f"  {record.source.title}  {record.source.path}  {chunks} {plural}")
+        print(
+            f"  {record.source.id}  {record.source.title}  {record.source.path}  {chunks} {plural}"
+        )
+    return 0
+
+
+def _remove(arguments: argparse.Namespace, base: KnowledgeBase) -> int:
+    if not base.remove(arguments.source_id):
+        print(f"error: no source {arguments.source_id}", file=sys.stderr)
+        return 1
+    print(f"  removed {arguments.source_id}", file=sys.stderr)
     return 0
 
 

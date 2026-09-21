@@ -63,6 +63,24 @@ def test_ingest_reports_chunks_and_lists_source(base, doc, capsys):
     assert "1 chunk" in listing
 
 
+def test_remove_drops_a_listed_source(base, doc, capsys):
+    main(["ingest", "--source", str(doc)], knowledge_base=base)
+    capsys.readouterr()
+    main(["sources"], knowledge_base=base)
+    source_id = capsys.readouterr().out.split()[0]
+
+    assert main(["remove", source_id], knowledge_base=base) == 0
+    capsys.readouterr()
+    main(["sources"], knowledge_base=base)
+    assert "library is empty" in capsys.readouterr().out
+    assert doc.is_file()
+
+
+def test_remove_unknown_id_is_a_friendly_error(base, capsys):
+    assert main(["remove", "missing"], knowledge_base=base) == 1
+    assert "no source" in capsys.readouterr().err
+
+
 def test_second_ingest_of_unchanged_file_is_skipped(base, doc, capsys):
     main(["ingest", "--source", str(doc)], knowledge_base=base)
     capsys.readouterr()

@@ -76,7 +76,11 @@ class SourceRecord:
 class SqliteMetadataStore:
     def __init__(self, path: Path) -> None:
         path.parent.mkdir(parents=True, exist_ok=True)
-        self._conn = sqlite3.connect(path)
+        # FastAPI runs `def` routes in a thread pool. The connection is opened during
+        # lifespan on the main thread, then used on a worker — SQLite forbids that
+        # unless we opt in. This process is single-user; we are not sharing the
+        # connection across concurrent writers.
+        self._conn = sqlite3.connect(path, check_same_thread=False)
         self._conn.row_factory = sqlite3.Row
         self._conn.execute("PRAGMA foreign_keys = ON")
         self._conn.execute("PRAGMA journal_mode = WAL")

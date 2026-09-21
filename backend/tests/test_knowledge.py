@@ -247,3 +247,38 @@ def test_ingesting_a_pdf_keeps_its_page_map(workspace) -> None:
     assert cited.text[cited.pages[0].start_char : cited.pages[0].end_char].startswith(
         "Mitochondria"
     )
+
+
+def test_ingest_upload_stores_a_copy_under_files(workspace) -> None:
+    folder, base, _embedder = workspace
+    result = base.ingest_upload("notes.md", TWO_PARAGRAPHS.encode())
+
+    assert result.status == "ingested"
+    assert result.source.path == folder / "data" / "files" / "notes.md"
+    assert result.source.path.read_text(encoding="utf-8") == TWO_PARAGRAPHS
+
+
+def test_remove_drops_catalog_vectors_and_owned_file(workspace) -> None:
+    folder, base, _embedder = workspace
+    result = base.ingest_upload("notes.md", TWO_PARAGRAPHS.encode())
+    owned = result.source.path
+
+    assert base.remove(result.source.id) is True
+    assert base.list_sources() == []
+    assert not owned.exists()
+    assert base.search("alpha", top_k=1) == ([], {})
+
+
+def test_remove_does_not_delete_a_file_the_cli_indexed_in_place(workspace) -> None:
+    folder, base, _embedder = workspace
+    path = write_doc(folder, "notes.md", TWO_PARAGRAPHS)
+    result = base.ingest(path)
+
+    assert base.remove(result.source.id) is True
+    assert path.is_file()
+
+
+def test_remove_unknown_id_returns_false(workspace) -> None:
+    _folder, base, _embedder = workspace
+
+    assert base.remove("missing") is False

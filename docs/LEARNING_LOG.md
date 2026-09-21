@@ -526,4 +526,31 @@ A ~100-line helper writes a valid PDF-1.4 file (objects, xref table, trailer) so
 do not need `reportlab` or a binary fixture. That helper is also a look at why extraction
 is reconstruction: the only line break is a `T*` operator moving the cursor down.
 
+---
+
+## Milestone 1D — HTTP API (2026-09-21)
+
+### The route is not the application
+`POST /sources` reads bytes, calls `KnowledgeBase.ingest_upload`, and returns JSON. Skip
+logic, dual-write, citations — none of that is in `api/`. The CLI and the API can only
+stay twins if they share one object.
+
+### Why a copy, not a path
+The catalog keys documents by path. If the API ingested `/Users/you/paper.pdf` and you
+moved that file, skip-if-unchanged would break and the library would point at a ghost.
+Saving under `data/files/paper.pdf` makes the library the owner. `Path(filename).name`
+is what stops `../../etc/passwd` from becoming a path.
+
+### FastAPI `def` vs `async def`
+A plain `def` route runs in a thread pool so `/health` can still answer while `/ask` is
+blocked on Ollama. Calling SQLite from that worker thread is why we had to pass
+`check_same_thread=False`. The error message is exact: "SQLite objects created in a
+thread can only be used in that same thread."
+
+### Delete order is the opposite of ingest
+Ingest writes the catalog first (source of truth), then vectors. Delete drops vectors
+first, then the catalog. If the second step fails, ingest's repair rule (incomplete
+index) still applies. The other order would leave search hits SQLite cannot load.
+
+
 

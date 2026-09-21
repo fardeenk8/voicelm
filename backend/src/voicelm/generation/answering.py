@@ -8,7 +8,7 @@ from voicelm.generation.citations import (
     invalid_markers,
     strip_unsupported_markers,
 )
-from voicelm.generation.ollama import OllamaChatModel
+from voicelm.generation.ollama import ChatModel
 from voicelm.generation.prompt import (
     DEFAULT_MAX_EXCERPT_CHARS,
     SYSTEM_INSTRUCTION,
@@ -22,7 +22,7 @@ def answer_question(
     question: str,
     results: Sequence[SearchResult],
     sources: Mapping[str, Source],
-    model: OllamaChatModel,
+    model: ChatModel,
     max_excerpt_chars: int = DEFAULT_MAX_EXCERPT_CHARS,
 ) -> Answer:
     """Answer `question` using only `results`, returning citations for what was used.

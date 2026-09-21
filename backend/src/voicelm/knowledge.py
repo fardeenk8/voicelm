@@ -11,9 +11,10 @@ from typing import Literal, Protocol
 
 from voicelm.domain.models import Answer, Chunk, EmbeddedChunk, Source
 from voicelm.generation.answering import answer_question
-from voicelm.generation.ollama import OllamaChatModel
+from voicelm.generation.ollama import ChatModel
 from voicelm.ingestion.chunking import ChunkingConfig, chunk_document
-from voicelm.ingestion.loader import load_source
+from voicelm.ingestion.loader import SUPPORTED_SUFFIXES, UnsupportedFileType, load_source
+from voicelm.paths import owned_files_dir
 from voicelm.retrieval.store import SearchResult
 from voicelm.storage.qdrant import QdrantVectorIndex
 from voicelm.storage.sqlite import IngestMeta, SourceRecord, SqliteMetadataStore
@@ -48,6 +49,7 @@ class KnowledgeBase:
         index: QdrantVectorIndex | None = None,
     ) -> None:
         data_dir.mkdir(parents=True, exist_ok=True)
+        self._data_dir = data_dir
         self._embedder = embedder
         self._chunking = chunking or ChunkingConfig()
         self._catalog = catalog or SqliteMetadataStore(data_dir / "voicelm.db")
@@ -115,6 +117,45 @@ class KnowledgeBase:
 
         return IngestResult(source, len(chunks), status)
 
+    def ingest_upload(self, filename: str, data: bytes) -> IngestResult:
+        """Save `data` under the library's files directory and ingest that copy.
+
+        The API cannot assume a shared filesystem with the client, so it keeps its own
+        copy. The filename's last component is the path we catalog by: uploading
+        `notes.md` twice is an update of the same source, not a second document.
+        """
+        dest = self._destination_for(filename)
+        dest.parent.mkdir(parents=True, exist_ok=True)
+        dest.write_bytes(data)
+        try:
+            return self.ingest(dest)
+        except Exception:
+            # Leave the copy if this path is already in the catalog (an update that
+            # failed after the previous version existed). Delete it if we just created
+            # a new file that never made it into the catalog.
+            if self._catalog.get_by_path(dest) is None:
+                dest.unlink(missing_ok=True)
+            raise
+
+    def remove(self, source_id: str) -> bool:
+        """Drop a document from both stores. Returns False if the id was unknown.
+
+        Vectors first, then the catalog: if the catalog delete fails, the next ingest
+        sees an incomplete index and repairs. The opposite order would leave search hits
+        that SQLite cannot load.
+
+        Files the API stored under `data/files/` are deleted. Files the CLI indexed in
+        place are left on disk — they belong to the user, not the library.
+        """
+        record = self._catalog.get(source_id)
+        if record is None:
+            return False
+
+        self._index.delete_by_source(source_id)
+        self._catalog.delete(source_id)
+        self._delete_owned_file(record.source.path)
+        return True
+
     def search(self, question: str, top_k: int = 5) -> tuple[list[SearchResult], dict[str, Source]]:
         """Qdrant finds ids; SQLite loads the passages. That join is this method."""
         if not question.strip():
@@ -144,7 +185,7 @@ class KnowledgeBase:
 
         return results, sources
 
-    def ask(self, question: str, model: OllamaChatModel, top_k: int = 5) -> Answer:
+    def ask(self, question: str, model: ChatModel, top_k: int = 5) -> Answer:
         results, sources = self.search(question, top_k=top_k)
         return answer_question(question, results, sources, model)
 
@@ -156,3 +197,22 @@ class KnowledgeBase:
 
     def _index_is_complete(self, source_id: str) -> bool:
         return self._index.count_by_source(source_id) == len(self._catalog.get_chunks(source_id))
+
+    def _destination_for(self, filename: str) -> Path:
+        name = Path(filename).name
+        if not name or name in {".", ".."}:
+            raise ValueError("filename is empty")
+        if Path(name).suffix.lower() not in SUPPORTED_SUFFIXES:
+            raise UnsupportedFileType(f"{name}: expected one of {sorted(SUPPORTED_SUFFIXES)}")
+
+        files_dir = owned_files_dir(self._data_dir).resolve()
+        dest = (files_dir / name).resolve()
+        if not dest.is_relative_to(files_dir):
+            raise ValueError("filename is not a simple file name")
+        return dest
+
+    def _delete_owned_file(self, path: Path) -> None:
+        files_dir = owned_files_dir(self._data_dir).resolve()
+        resolved = path.resolve()
+        if resolved.is_relative_to(files_dir) and resolved.is_file():
+            resolved.unlink()

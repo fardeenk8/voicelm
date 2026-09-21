@@ -57,15 +57,17 @@ The entire product brain. Runs as a standalone process and is useful without any
 | `storage/` | SQLite and Qdrant access. |
 | `api/` | FastAPI routes — a thin shell over the modules above. |
 
-All of the above exists today, with `api/` still limited to a health check.
-`KnowledgeBase` (`knowledge.py`) is the seam everything above the storage layer goes
-through: it ingests into SQLite then Qdrant, skips unchanged files, and searches by
-joining Qdrant ids to SQLite passages. The CLI and, later, the API routes are both thin
-callers of it — neither writes to a store directly.
+All of the above exists today. `KnowledgeBase` (`knowledge.py`) is the seam everything
+above the storage layer goes through: ingest, skip-if-unchanged, search, ask, and
+remove. The CLI and the HTTP routes are both thin callers of it — neither writes to a
+store directly.
 
 PDFs are flattened into the same `Source.text` as Markdown, plus a `pages` index that
 maps character offsets back to physical page numbers. Chunking stays format-blind;
 citations look up the page after retrieval (ADR-0023).
+
+The HTTP API accepts file uploads (the library keeps a copy under `data/files/`) and
+returns a complete JSON answer. Token streaming over SSE is deferred until a UI needs it.
 
 ### What makes an answer grounded
 

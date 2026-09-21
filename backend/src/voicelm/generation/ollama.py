@@ -5,6 +5,7 @@ POST /api/chat  {"model": ..., "messages": [...], "options": {...}}
 """
 
 from dataclasses import dataclass
+from typing import Protocol
 
 import httpx2
 
@@ -23,6 +24,14 @@ class ChatResult:
     text: str
     prompt_tokens: int
     completion_tokens: int
+
+
+class ChatModel(Protocol):
+    """Anything that turns a prompt into an answer. Tests pass a fake; production uses Ollama."""
+
+    model: str
+
+    def chat(self, system: str, user: str) -> ChatResult: ...
 
 
 class OllamaChatModel:
