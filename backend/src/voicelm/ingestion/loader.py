@@ -1,6 +1,7 @@
 """Reading documents off disk into a `Source`."""
 
 import hashlib
+import uuid
 from pathlib import Path
 
 from voicelm.domain.models import Source
@@ -17,8 +18,21 @@ class UndecodableFile(Exception):
     """Raised when a file is not valid UTF-8."""
 
 
+def hash_content(text: str) -> str:
+    """SHA-256 of the cleaned text, used to skip re-embedding unchanged files.
+
+    This is *not* the source identity. Two files with the same hash are still two sources
+    if they live at different paths (ADR-0019).
+    """
+    return hashlib.sha256(text.encode("utf-8")).hexdigest()
+
+
 def load_source(path: Path) -> Source:
     """Read and clean a text document.
+
+    `id` is a fresh UUID every call. Persistence looks the file up by *path* and reuses
+    the existing id when the file was ingested before. The loader cannot do that lookup:
+    it does not know whether a store exists yet.
 
     Only UTF-8 is accepted. Legacy encodings such as cp1252 are common in the wild, but
     guessing an encoding can silently corrupt text, and corrupted text produces confident
@@ -35,14 +49,10 @@ def load_source(path: Path) -> Source:
 
     text = clean_text(raw)
 
-    return Source(id=_content_id(text), path=path, title=path.stem, text=text)
-
-
-def _content_id(text: str) -> str:
-    """Derive a stable id from the content itself.
-
-    Because the id is a hash of the text rather than a random value, re-ingesting an
-    unchanged file produces the same id and the same chunk ids. That makes ingestion
-    repeatable and gives us de-duplication for free.
-    """
-    return hashlib.sha256(text.encode("utf-8")).hexdigest()[:16]
+    return Source(
+        id=str(uuid.uuid4()),
+        path=path,
+        title=path.stem,
+        text=text,
+        content_hash=hash_content(text),
+    )

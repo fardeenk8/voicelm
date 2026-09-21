@@ -17,12 +17,17 @@ class Source:
 
     `text` is the *cleaned* text and is the canonical content of the document: it is what
     we chunk, what we quote back in citations, and what chunk offsets index into.
+
+    `id` is a UUID. Persistence looks files up by path and reuses the existing id when
+    the same file is ingested again. `content_hash` is SHA-256 of `text` and decides
+    whether re-embedding can be skipped (ADR-0019).
     """
 
     id: str
     path: Path
     title: str
     text: str
+    content_hash: str
 
 
 @dataclass(frozen=True)

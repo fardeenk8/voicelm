@@ -53,8 +53,8 @@ The entire product brain. Runs as a standalone process and is useful without any
 | `storage/` | SQLite and Qdrant access. |
 | `api/` | FastAPI routes — a thin shell over the modules above. |
 
-All of the above except `storage/` exists today, plus a thin `cli.py`. `storage/` arrives
-in Milestone 1B; until then embeddings live in memory and are rebuilt on each run.
+All of the above except Qdrant exists today, plus a thin `cli.py`. `storage/sqlite.py` is
+the catalog of sources and chunks. Vectors are still in-memory until Milestone 1B Step 2.
 
 ### What makes an answer grounded
 

@@ -11,7 +11,7 @@ from voicelm.generation.answering import answer_question
 from voicelm.generation.ollama import OllamaChatModel
 from voicelm.retrieval.store import SearchResult
 
-SOURCES = {"src": Source(id="src", path=Path("notes.md"), title="notes", text="")}
+SOURCES = {"src": Source(id="src", path=Path("notes.md"), title="notes", text="", content_hash="h")}
 
 
 def make_result(text: str, chunk_id: str = "src:0") -> SearchResult:

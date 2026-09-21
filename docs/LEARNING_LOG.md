@@ -373,7 +373,47 @@ rather than the program, and check whether something else shares its inode.
 
 ---
 
-## Queued for Milestone 1B
+## Milestone 1B, Step 1 — SQLite catalog (2026-09-20)
 
-Approximate nearest neighbour search (HNSW) and what Qdrant buys over brute force, SQLite
-schema and migrations, and persisting vectors so ingestion is not repeated on every run.
+### SQLite is a library
+There is no process to start. `sqlite3.connect(path)` opens (or creates) one file. The
+standard library ships the driver; the only dependency is the file on disk. That is why
+the architecture diagram has a network arrow to Ollama and Qdrant, and not to SQLite.
+
+### Foreign keys are opt-in
+SQLite parses `REFERENCES` and `ON DELETE CASCADE` in the schema, then ignores them until
+you run `PRAGMA foreign_keys = ON` on **that connection**. Forgetting it means deleting a
+source leaves orphan chunks with no error. Tests that assert cascade would fail if we
+omitted it — which is why they exist.
+
+### WAL mode
+`PRAGMA journal_mode = WAL` writes changes to a `-wal` sidecar instead of overwriting the
+main file. Readers can search while a writer is ingesting. Default rollback-journal mode
+locks the whole file for the duration of a write.
+
+### Identity vs content
+A hash of the text answers "has this changed?" A UUID plus a unique path answers "which
+document is this?" Mixing them (the Milestone 1 shortcut) made identical files collapse
+into one source. Fine for a one-shot CLI; wrong for a workspace.
+
+`load_source` still cannot look up an existing id: it does not know a database exists. It
+mints a UUID every time. The knowledge base, next, will swap in the stored id when the
+path is already known.
+
+### Transactions
+`with connection:` in Python's sqlite3 module begins a transaction and commits on success
+or rolls back on exception. Saving a source and replacing its chunks in that block means
+you cannot observe a source with yesterday's chunks.
+
+### Order is part of `get_chunks_by_ids`
+SQL `IN (...)` does not preserve the order of the id list. Search ranks by similarity, so
+the catalog has to re-order the rows to match what the caller asked for. Missing ids raise:
+that is Qdrant and SQLite having drifted, and silence would drop a hit.
+
+---
+
+## Queued for Milestone 1B, Steps 2–4
+
+HNSW and Qdrant local mode, the dual-write orchestrator, and splitting the CLI into
+`ingest` / `ask` / `sources`.
+

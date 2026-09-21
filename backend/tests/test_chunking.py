@@ -9,7 +9,7 @@ from voicelm.ingestion.chunking import ChunkingConfig, chunk_document
 
 
 def make_source(text: str, source_id: str = "src1") -> Source:
-    return Source(id=source_id, path=Path("memo.md"), title="memo", text=text)
+    return Source(id=source_id, path=Path("memo.md"), title="memo", text=text, content_hash="h")
 
 
 def paragraphs(count: int, length: int = 300) -> str:

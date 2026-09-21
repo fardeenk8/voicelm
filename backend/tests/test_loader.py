@@ -30,18 +30,33 @@ def test_text_is_cleaned_on_load(tmp_path: Path) -> None:
     assert load_source(path).text == "line\n\nnext"
 
 
-def test_identical_content_yields_the_same_id(tmp_path: Path) -> None:
+def test_identical_content_yields_the_same_hash(tmp_path: Path) -> None:
     first = write(tmp_path, "a.txt", "same body")
     second = write(tmp_path, "b.txt", "same body")
 
-    assert load_source(first).id == load_source(second).id
+    assert load_source(first).content_hash == load_source(second).content_hash
 
 
-def test_different_content_yields_a_different_id(tmp_path: Path) -> None:
+def test_identical_content_still_gets_distinct_ids(tmp_path: Path) -> None:
+    # Identity is the file path, not the text (ADR-0019). Two copies are two sources.
+    first = write(tmp_path, "a.txt", "same body")
+    second = write(tmp_path, "b.txt", "same body")
+
+    assert load_source(first).id != load_source(second).id
+
+
+def test_different_content_yields_a_different_hash(tmp_path: Path) -> None:
     first = write(tmp_path, "a.txt", "one body")
     second = write(tmp_path, "b.txt", "another body")
 
-    assert load_source(first).id != load_source(second).id
+    assert load_source(first).content_hash != load_source(second).content_hash
+
+
+def test_id_is_a_uuid(tmp_path: Path) -> None:
+    source = load_source(write(tmp_path, "a.txt", "body"))
+
+    assert len(source.id) == 36
+    assert source.id.count("-") == 4
 
 
 def test_unsupported_extension_is_rejected(tmp_path: Path) -> None:

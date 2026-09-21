@@ -382,3 +382,27 @@ beneath it always agree. A live test asserts exactly that.
 model has real numbers to choose from. A document that collapses into one chunk is the
 worst case, and also produces citations spanning the whole document. This is why
 `--chunk-chars` is exposed on the CLI.
+
+---
+
+## ADR-0019 — Source identity is the file path, not the content hash
+
+**Date:** 2026-09-20 · **Status:** Accepted
+
+**Context.** Milestone 1 used the first 16 hex characters of SHA-256 of the cleaned text
+as `Source.id`. Two files with identical content therefore shared an id, which made a
+one-shot CLI idempotent. In a persisted workspace that is the wrong event: a user who
+imports `draft.md` and `final.md` with the same words wants two sources listed, not one
+path overwriting the other.
+
+**Decision.** `Source.id` is a UUID. `path` is unique in SQLite. `content_hash` is the
+full SHA-256 of the cleaned text and is used only to skip re-embedding when a already
+ingested file has not changed.
+
+**Consequences.** `load_source` issues a fresh UUID every call. The knowledge base (Step 3)
+looks the file up by resolved path and reuses the stored id. Two copies of the same text
+at different paths are two rows.
+
+**Alternatives.** Keep content-hash ids (simpler; identical files collapse; last path
+wins). Rejected for a workspace.
+

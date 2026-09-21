@@ -24,7 +24,7 @@ def make_result(text: str, score: float = 0.5, source_id: str = "src") -> Search
     return SearchResult(chunk=chunk, score=score)
 
 
-SOURCES = {"src": Source(id="src", path=Path("notes.md"), title="notes", text="")}
+SOURCES = {"src": Source(id="src", path=Path("notes.md"), title="notes", text="", content_hash="h")}
 
 
 # --- the system instruction -------------------------------------------------------

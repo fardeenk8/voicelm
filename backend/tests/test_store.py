@@ -114,7 +114,7 @@ def test_rejects_a_query_of_the_wrong_length() -> None:
 
 def test_results_carry_provenance_back_to_the_source() -> None:
     text = "Alpha paragraph about caching.\n\nBeta paragraph about networking."
-    source = Source(id="src9", path=Path("notes.md"), title="notes", text=text)
+    source = Source(id="src9", path=Path("notes.md"), title="notes", text=text, content_hash="h")
     chunks = chunk_document(source)
 
     store = InMemoryVectorStore()

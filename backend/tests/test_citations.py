@@ -9,8 +9,8 @@ from voicelm.generation.citations import (
 from voicelm.retrieval.store import SearchResult
 
 SOURCES = {
-    "src": Source(id="src", path=Path("notes.md"), title="notes", text=""),
-    "other": Source(id="other", path=Path("spec.txt"), title="spec", text=""),
+    "src": Source(id="src", path=Path("notes.md"), title="notes", text="", content_hash="h"),
+    "other": Source(id="other", path=Path("spec.txt"), title="spec", text="", content_hash="h"),
 }
 
 
