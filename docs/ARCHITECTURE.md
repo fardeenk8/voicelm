@@ -66,8 +66,9 @@ PDFs are flattened into the same `Source.text` as Markdown, plus a `pages` index
 maps character offsets back to physical page numbers. Chunking stays format-blind;
 citations look up the page after retrieval (ADR-0023).
 
-The HTTP API accepts file uploads (the library keeps a copy under `data/files/`) and
-returns a complete JSON answer. Token streaming over SSE is deferred until a UI needs it.
+The HTTP API accepts file uploads (the library keeps a copy under `data/files/`).
+`POST /ask` returns a complete JSON answer. `POST /ask/stream` sends tokens as
+Server-Sent Events and finishes with the same JSON object, citations included.
 
 ### What makes an answer grounded
 

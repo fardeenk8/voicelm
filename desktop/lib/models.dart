@@ -85,6 +85,7 @@ class GroundedAnswer {
     required this.model,
     required this.citations,
     required this.unsupportedMarkers,
+    this.isComplete = true,
   });
 
   factory GroundedAnswer.fromJson(Map<String, dynamic> json) {
@@ -102,6 +103,22 @@ class GroundedAnswer {
   final String model;
   final List<AnswerCitation> citations;
   final List<int> unsupportedMarkers;
+
+  /// False while tokens are still arriving. Citations are only trustworthy
+  /// after the `done` event, because a marker mid-stream might be stripped.
+  final bool isComplete;
+}
+
+sealed class AskStreamEvent {}
+
+final class AskTokenEvent extends AskStreamEvent {
+  AskTokenEvent(this.text);
+  final String text;
+}
+
+final class AskDoneEvent extends AskStreamEvent {
+  AskDoneEvent(this.answer);
+  final GroundedAnswer answer;
 }
 
 class ApiException implements Exception {

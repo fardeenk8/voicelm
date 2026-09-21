@@ -201,6 +201,34 @@ def test_ask_uses_retrieved_passages(workspace) -> None:
     assert answer.citations[0].source_title == "notes"
 
 
+def test_ask_stream_joins_search_and_tokens(workspace) -> None:
+    from collections.abc import Iterator
+
+    from voicelm.domain.models import Answer
+    from voicelm.generation.answering import AnswerToken
+    from voicelm.generation.ollama import ChatResult
+
+    _folder, base, _embedder = workspace
+    write_doc(_folder, "notes.md", TWO_PARAGRAPHS)
+    base.ingest(_folder / "notes.md")
+
+    class StreamFake:
+        model = "fake-chat"
+
+        def chat(self, system: str, user: str) -> ChatResult:
+            return ChatResult(text="Alpha is first [1].", prompt_tokens=0, completion_tokens=0)
+
+        def chat_stream(self, system: str, user: str) -> Iterator[str]:
+            yield "Alpha "
+            yield "is first [1]."
+
+    events = list(base.ask_stream("What about alpha?", StreamFake(), top_k=1))
+    tokens = [event.text for event in events if isinstance(event, AnswerToken)]
+    assert tokens == ["Alpha ", "is first [1]."]
+    assert isinstance(events[-1], Answer)
+    assert events[-1].citations[0].source_title == "notes"
+
+
 def test_blank_question_is_rejected(workspace) -> None:
     _folder, base, _embedder = workspace
 

@@ -598,6 +598,28 @@ built `.app`, and `codesign` refuses it: "resource fork, Finder information, or 
 detritus not allowed." Debug builds skip signing so `flutter run` works. Release signing
 will need the same xattr strip, or the project moved off iCloud-synced folders.
 
+---
+
+## Milestone 1F — SSE token stream (2026-09-21)
+
+### Two clocks
+Retrieval and prompt-building are instant. Generation is the slow part. Streaming
+only the second clock is enough: the user still waits for search, then watches
+words appear. Citations cannot join that first clock. A `[1]` is just a number
+until the model stops and we look it up in *our* excerpt list.
+
+### SSE is a status code you cannot change
+`POST /ask/stream` answers 200 as soon as the first frame is sent. If Ollama dies
+after that, there is no 503 left to return. The `error` event is the same fact
+expressed as a frame. Empty library stays 409 because we know that *before*
+opening the stream.
+
+### Ollama's stream is not SSE
+Ollama speaks NDJSON (`{"message":{"content":"Hel"},"done":false}`). We translate
+that into `event: token` frames. The desktop parser never sees Ollama; it only
+knows our three event names. That is the same "one doorway" rule as
+`KnowledgeBase`: Flutter does not import an Ollama client.
+
 
 
 

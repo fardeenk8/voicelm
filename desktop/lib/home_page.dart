@@ -144,13 +144,30 @@ class _HomePageState extends State<HomePage> {
       _answer = null;
     });
     try {
-      final answer = await widget.api.ask(question);
+      var draft = '';
+      await for (final event in widget.api.askStream(question)) {
+        if (!mounted) return;
+        if (event is AskTokenEvent) {
+          draft += event.text;
+          setState(() {
+            _status = null;
+            _answer = GroundedAnswer(
+              text: draft,
+              model: '',
+              citations: const [],
+              unsupportedMarkers: const [],
+              isComplete: false,
+            );
+          });
+        } else if (event is AskDoneEvent) {
+          setState(() {
+            _answer = event.answer;
+            _status = null;
+          });
+        }
+      }
       if (!mounted) return;
-      setState(() {
-        _answer = answer;
-        _status = null;
-        _busy = false;
-      });
+      setState(() => _busy = false);
     } on ApiException catch (error) {
       if (!mounted) return;
       setState(() {
@@ -315,27 +332,35 @@ class _AnswerView extends StatelessWidget {
       padding: const EdgeInsets.fromLTRB(28, 20, 28, 32),
       children: [
         SelectableText(answer.text, style: theme.textTheme.bodyLarge),
-        if (answer.unsupportedMarkers.isNotEmpty)
-          Padding(
-            padding: const EdgeInsets.only(top: 12),
-            child: Text(
-              'The model referenced ${answer.unsupportedMarkers.map((m) => '[$m]').join(', ')}, '
-              'which matched no excerpt; those markers were removed.',
-              style: theme.textTheme.bodySmall?.copyWith(color: theme.colorScheme.error),
-            ),
-          ),
-        const SizedBox(height: 24),
-        Text('Sources', style: theme.textTheme.titleMedium),
-        const SizedBox(height: 8),
-        if (answer.citations.isEmpty)
+        if (!answer.isComplete) ...[
+          const SizedBox(height: 16),
           Text(
-            'No citations — this answer is not backed by a specific passage.',
-            style: theme.textTheme.bodyMedium?.copyWith(color: theme.colorScheme.onSurfaceVariant),
-          )
-        else
-          for (final citation in answer.citations) _CitationCard(citation: citation),
-        const SizedBox(height: 16),
-        Text(answer.model, style: theme.textTheme.labelSmall?.copyWith(color: theme.colorScheme.outline)),
+            'Writing… citations appear when the model finishes.',
+            style: theme.textTheme.bodySmall?.copyWith(color: theme.colorScheme.onSurfaceVariant),
+          ),
+        ] else ...[
+          if (answer.unsupportedMarkers.isNotEmpty)
+            Padding(
+              padding: const EdgeInsets.only(top: 12),
+              child: Text(
+                'The model referenced ${answer.unsupportedMarkers.map((m) => '[$m]').join(', ')}, '
+                'which matched no excerpt; those markers were removed.',
+                style: theme.textTheme.bodySmall?.copyWith(color: theme.colorScheme.error),
+              ),
+            ),
+          const SizedBox(height: 24),
+          Text('Sources', style: theme.textTheme.titleMedium),
+          const SizedBox(height: 8),
+          if (answer.citations.isEmpty)
+            Text(
+              'No citations — this answer is not backed by a specific passage.',
+              style: theme.textTheme.bodyMedium?.copyWith(color: theme.colorScheme.onSurfaceVariant),
+            )
+          else
+            for (final citation in answer.citations) _CitationCard(citation: citation),
+          const SizedBox(height: 16),
+          Text(answer.model, style: theme.textTheme.labelSmall?.copyWith(color: theme.colorScheme.outline)),
+        ],
       ],
     );
   }

@@ -567,4 +567,34 @@ and ad-hoc codesign fails. Debug sets `CODE_SIGNING_ALLOWED=NO`. That is a local
 workaround, not a shipping decision.
 
 
+## ADR-0028 — Stream tokens over SSE; keep JSON `/ask`
+
+**Date:** 2026-09-21 · **Status:** Accepted
+
+**Decision.** `POST /ask` still returns one JSON `AskOut`. `POST /ask/stream` returns
+`text/event-stream` with three event names:
+
+- `token` — `{"text": "..."}` one model delta
+- `done` — the same JSON object `/ask` returns, including citations
+- `error` — `{"detail": "..."}` when generation fails after the stream has opened
+
+Ollama is called with `stream: true` only on this path. The CLI and `POST /ask` still
+use `chat()` with `stream: false`.
+
+**Why a second path.** ADR-0004 promised SSE. ADR-0026 deferred it until a UI existed.
+The Flutter screen is that UI. Keeping JSON `/ask` means curl, tests, and the CLI do
+not have to parse an event stream.
+
+**Why citations only on `done`.** Markers are stripped and citations attached against
+the finished text. A `[2]` mid-stream might still become valid, or be removed. Showing
+a Sources list while tokens are arriving would flicker or lie.
+
+**Why `error` events instead of HTTP 503 mid-stream.** Once SSE starts, the status
+code is already 200. Empty library and a blank question are still 409 / 400 because
+those are known before the first byte.
+
+**Consequence.** Flutter `VoiceLmApi.ask` remains. The screen calls `askStream`.
+`KnowledgeBase.ask_stream` is the one doorway; the route does not talk to Ollama.
+
+
 

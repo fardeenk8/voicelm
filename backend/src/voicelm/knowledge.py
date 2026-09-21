@@ -4,13 +4,13 @@ Ingestion, skip-if-unchanged, search, and answering all go through here so neith
 store is written from a route handler or a command function.
 """
 
-from collections.abc import Sequence
+from collections.abc import Iterator, Sequence
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Literal, Protocol
 
 from voicelm.domain.models import Answer, Chunk, EmbeddedChunk, Source
-from voicelm.generation.answering import answer_question
+from voicelm.generation.answering import AnswerToken, answer_question, answer_question_stream
 from voicelm.generation.ollama import ChatModel
 from voicelm.ingestion.chunking import ChunkingConfig, chunk_document
 from voicelm.ingestion.loader import SUPPORTED_SUFFIXES, UnsupportedFileType, load_source
@@ -188,6 +188,12 @@ class KnowledgeBase:
     def ask(self, question: str, model: ChatModel, top_k: int = 5) -> Answer:
         results, sources = self.search(question, top_k=top_k)
         return answer_question(question, results, sources, model)
+
+    def ask_stream(
+        self, question: str, model: ChatModel, top_k: int = 5
+    ) -> Iterator[AnswerToken | Answer]:
+        results, sources = self.search(question, top_k=top_k)
+        yield from answer_question_stream(question, results, sources, model)
 
     def list_sources(self) -> list[SourceRecord]:
         return self._catalog.list_sources()

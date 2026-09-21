@@ -67,6 +67,66 @@ void main() {
     expect(answer.citations.single.sourceTitle, 'physics');
   });
 
+  test('askStream yields tokens then the done answer', () async {
+    final api = VoiceLmApi(
+      baseUrl: 'http://test',
+      client: MockClient((request) async {
+        expect(request.method, 'POST');
+        expect(request.url.path, '/ask/stream');
+        expect(jsonDecode(request.body)['question'], 'how fast?');
+        return http.Response(
+          'event: token\ndata: {"text":"Very "}\n\n'
+          'event: token\ndata: {"text":"[1]."}\n\n'
+          'event: done\ndata: ${jsonEncode({
+            'text': 'Very [1].',
+            'model': 'fake',
+            'citations': [
+              {
+                'marker': 1,
+                'source_id': 's',
+                'source_title': 'physics',
+                'start_char': 0,
+                'end_char': 4,
+                'pages': <int>[],
+                'quote': 'fast',
+              },
+            ],
+            'unsupported_markers': <int>[],
+          })}\n\n',
+          200,
+          headers: {'content-type': 'text/event-stream'},
+        );
+      }),
+    );
+
+    final events = await api.askStream('how fast?').toList();
+
+    expect(events[0], isA<AskTokenEvent>());
+    expect((events[0] as AskTokenEvent).text, 'Very ');
+    expect(events[1], isA<AskTokenEvent>());
+    final done = events.last as AskDoneEvent;
+    expect(done.answer.text, 'Very [1].');
+    expect(done.answer.citations.single.sourceTitle, 'physics');
+  });
+
+  test('askStream turns an error event into an ApiException', () async {
+    final api = VoiceLmApi(
+      baseUrl: 'http://test',
+      client: MockClient((request) async {
+        return http.Response(
+          'event: error\ndata: {"detail":"Ollama is down"}\n\n',
+          200,
+          headers: {'content-type': 'text/event-stream'},
+        );
+      }),
+    );
+
+    expect(
+      () => api.askStream('anything?').toList(),
+      throwsA(isA<ApiException>().having((e) => e.message, 'message', 'Ollama is down')),
+    );
+  });
+
   test('a 409 empty library becomes an ApiException with the detail', () async {
     final api = VoiceLmApi(
       baseUrl: 'http://test',

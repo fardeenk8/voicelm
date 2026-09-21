@@ -7,7 +7,7 @@ import httpx2
 import pytest
 
 from voicelm.domain.models import Chunk, Source
-from voicelm.generation.answering import answer_question
+from voicelm.generation.answering import AnswerToken, answer_question, answer_question_stream
 from voicelm.generation.ollama import OllamaChatModel
 from voicelm.retrieval.store import SearchResult
 
@@ -96,3 +96,46 @@ def test_blank_question_is_rejected() -> None:
 
     with pytest.raises(ValueError, match="cannot be empty"):
         answer_question("  ", [make_result("text")], SOURCES, model)
+
+
+class _StreamingFake:
+    model = "fake-chat"
+
+    def __init__(self, pieces: list[str]) -> None:
+        self.pieces = pieces
+        self.user = ""
+
+    def chat_stream(self, system: str, user: str):
+        self.user = user
+        yield from self.pieces
+
+
+def test_stream_yields_tokens_then_the_cited_answer() -> None:
+    model = _StreamingFake(["Caching ", "is used [1]."])
+
+    events = list(
+        answer_question_stream(
+            "What is used?", [make_result("We cache responses.")], SOURCES, model
+        )
+    )
+
+    assert [event.text for event in events if isinstance(event, AnswerToken)] == [
+        "Caching ",
+        "is used [1].",
+    ]
+    answer = events[-1]
+    assert answer.text == "Caching is used [1]."
+    assert [citation.marker for citation in answer.citations] == [1]
+    assert "the retrieved text" not in model.user
+    assert "We cache responses." in model.user
+
+
+def test_stream_strips_unsupported_markers_only_on_the_final_answer() -> None:
+    model = _StreamingFake(["Claims [1]", " and [2]."])
+
+    events = list(answer_question_stream("Q?", [make_result("only one excerpt")], SOURCES, model))
+
+    streamed = "".join(event.text for event in events if isinstance(event, AnswerToken))
+    assert "[2]" in streamed
+    assert "[2]" not in events[-1].text
+    assert events[-1].unsupported_markers == (2,)

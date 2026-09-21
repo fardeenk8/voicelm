@@ -7,11 +7,13 @@ Everything runs locally. Your documents never leave your machine.
 
 ## Status
 
-**Milestone 1E — a macOS window over that library.** Import `.txt`, `.md`, or `.pdf`
-from the CLI, the HTTP API, or the Flutter desktop app. Answers come back grounded in
-your documents with citations. The UI talks only to `http://127.0.0.1:8000`.
+**Milestone 1F — answers stream into the macOS window.** Import `.txt`, `.md`, or `.pdf`
+from the CLI, the HTTP API, or the Flutter desktop app. `POST /ask` still returns one
+JSON blob; the desktop screen uses `POST /ask/stream` so tokens appear as the model
+writes them. Citations arrive on the final `done` event. The UI talks only to
+`http://127.0.0.1:8000`.
 
-Not yet: scanned PDFs (no OCR), streaming tokens (SSE), or voice.
+Not yet: scanned PDFs (no OCR) or voice.
 
 See [`docs/PRODUCT_SPEC.md`](docs/PRODUCT_SPEC.md) for where this is going and
 [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) for how it is put together.
@@ -116,11 +118,16 @@ curl http://127.0.0.1:8000/sources
 curl -X POST http://127.0.0.1:8000/ask \
   -H 'Content-Type: application/json' \
   -d '{"question": "Why did we choose that approach?"}'
+
+curl -N -X POST http://127.0.0.1:8000/ask/stream \
+  -H 'Content-Type: application/json' \
+  -d '{"question": "Why did we choose that approach?"}'
 ```
 
 Uploaded files are stored under `data/files/` so the library owns a copy. Interactive
-documentation is at <http://127.0.0.1:8000/docs>. Token streaming (SSE) is not wired yet;
-`/ask` returns the complete answer.
+documentation is at <http://127.0.0.1:8000/docs>. `/ask` returns the complete answer.
+`/ask/stream` sends `token` events, then a `done` event with the same JSON (citations
+included).
 
 ## The desktop app
 

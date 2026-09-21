@@ -101,3 +101,56 @@ def test_connection_failure_explains_how_to_fix_it() -> None:
 
     with pytest.raises(GenerationError, match="brew services start ollama"):
         OllamaChatModel(client=client).chat("system", "user")
+
+
+def _ndjson(*frames: dict) -> bytes:
+    return "".join(json.dumps(frame) + "\n" for frame in frames).encode()
+
+
+def model_streaming(frames: list[dict], **kwargs) -> tuple[OllamaChatModel, list[dict]]:
+    sent: list[dict] = []
+
+    def handler(request: httpx2.Request) -> httpx2.Response:
+        sent.append(json.loads(request.content))
+        return httpx2.Response(200, content=_ndjson(*frames))
+
+    client = httpx2.Client(base_url="http://testserver", transport=httpx2.MockTransport(handler))
+    return OllamaChatModel(client=client, **kwargs), sent
+
+
+def test_chat_stream_yields_deltas_and_asks_ollama_to_stream() -> None:
+    model, sent = model_streaming(
+        [
+            {"message": {"role": "assistant", "content": "Hel"}, "done": False},
+            {"message": {"role": "assistant", "content": "lo"}, "done": False},
+            {
+                "message": {"role": "assistant", "content": ""},
+                "done": True,
+                "prompt_eval_count": 40,
+                "eval_count": 2,
+            },
+        ]
+    )
+
+    assert "".join(model.chat_stream("system", "user")) == "Hello"
+    assert sent[0]["stream"] is True
+
+
+def test_chat_stream_treats_a_full_context_window_as_truncation() -> None:
+    model, _ = model_streaming(
+        [
+            {"message": {"content": "ok"}, "done": False},
+            {"message": {"content": ""}, "done": True, "prompt_eval_count": 4096},
+        ],
+        num_ctx=4096,
+    )
+
+    with pytest.raises(GenerationError, match="truncated"):
+        list(model.chat_stream("system", "user"))
+
+
+def test_chat_stream_errors_when_the_done_frame_never_arrives() -> None:
+    model, _ = model_streaming([{"message": {"content": "Hel"}, "done": False}])
+
+    with pytest.raises(GenerationError, match="done frame"):
+        list(model.chat_stream("system", "user"))

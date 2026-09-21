@@ -41,8 +41,10 @@ void main() {
             200,
           );
         }
+        expect(request.url.path, '/ask/stream');
         return http.Response(
-          jsonEncode({
+          'event: token\ndata: {"text":"Light is fast [1]."}\n\n'
+          'event: done\ndata: ${jsonEncode({
             'text': 'Light is fast [1].',
             'model': 'fake-chat',
             'citations': [
@@ -57,8 +59,9 @@ void main() {
               },
             ],
             'unsupported_markers': <int>[],
-          }),
+          })}\n\n',
           200,
+          headers: {'content-type': 'text/event-stream'},
         );
       }),
     );

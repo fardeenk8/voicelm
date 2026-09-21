@@ -5,17 +5,20 @@ open SQLite or Qdrant themselves — that rule is what lets the CLI and a future
 client share one implementation (ADR-0026).
 """
 
-from collections.abc import AsyncIterator
+import json
+from collections.abc import AsyncIterator, Iterator
 from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Annotated
 
 from fastapi import Depends, FastAPI, File, HTTPException, Request, UploadFile
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, StreamingResponse
 
 from voicelm import __version__
 from voicelm.api.schemas import AskIn, AskOut, IngestOut, SourceOut, ask_out, ingest_out, source_out
+from voicelm.domain.models import Answer
 from voicelm.embeddings.ollama import EmbeddingError, OllamaEmbedder
+from voicelm.generation.answering import AnswerToken
 from voicelm.generation.ollama import ChatModel, GenerationError, OllamaChatModel
 from voicelm.ingestion.loader import UndecodableFile, UnsupportedFileType
 from voicelm.ingestion.pdf import PdfExtractionError
@@ -117,7 +120,47 @@ def create_app(
             )
         return ask_out(base.ask(body.question, model, top_k=body.top_k))
 
+    @app.post("/ask/stream")
+    def ask_stream(
+        body: AskIn,
+        base: Annotated[KnowledgeBase, Depends(_get_base)],
+        model: Annotated[ChatModel, Depends(_get_chat)],
+    ) -> StreamingResponse:
+        if not body.question.strip():
+            raise HTTPException(status_code=400, detail="question cannot be empty")
+        if not base.list_sources():
+            raise HTTPException(
+                status_code=409,
+                detail="library is empty; POST a file to /sources first",
+            )
+        return StreamingResponse(
+            _ask_events(base, model, body),
+            media_type="text/event-stream",
+            headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+        )
+
     return app
+
+
+def _ask_events(base: KnowledgeBase, model: ChatModel, body: AskIn) -> Iterator[str]:
+    """Turn KnowledgeBase.ask_stream into SSE frames.
+
+    Errors after the stream has opened cannot become HTTP status codes, so they
+    become an `error` event. Empty-library and blank-question stay real statuses
+    because those are checked before this generator runs.
+    """
+    try:
+        for item in base.ask_stream(body.question, model, top_k=body.top_k):
+            if isinstance(item, AnswerToken):
+                yield _sse("token", {"text": item.text})
+            elif isinstance(item, Answer):
+                yield _sse("done", ask_out(item).model_dump())
+    except (GenerationError, EmbeddingError, *ClientError) as error:
+        yield _sse("error", {"detail": str(error)})
+
+
+def _sse(event: str, data: dict) -> str:
+    return f"event: {event}\ndata: {json.dumps(data)}\n\n"
 
 
 def _get_base(request: Request) -> KnowledgeBase:

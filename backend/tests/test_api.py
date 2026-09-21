@@ -4,6 +4,8 @@ A real KnowledgeBase over a tmp directory, fakes only for Ollama. TestClient run
 FastAPI lifespan so these hit the same wiring uvicorn would.
 """
 
+import json
+from collections.abc import Iterator
 from pathlib import Path
 
 import pytest
@@ -13,7 +15,7 @@ from pdf_fixtures import make_pdf
 from voicelm import __version__
 from voicelm.api.app import create_app
 from voicelm.domain.models import Chunk, EmbeddedChunk
-from voicelm.generation.ollama import ChatResult
+from voicelm.generation.ollama import ChatResult, GenerationError
 from voicelm.knowledge import KnowledgeBase
 
 
@@ -34,6 +36,11 @@ class FakeChatModel:
 
     def chat(self, system: str, user: str) -> ChatResult:
         return ChatResult(text=self.reply, prompt_tokens=0, completion_tokens=0)
+
+    def chat_stream(self, system: str, user: str) -> Iterator[str]:
+        words = self.reply.split(" ")
+        for index, word in enumerate(words):
+            yield word if index == 0 else f" {word}"
 
 
 @pytest.fixture
@@ -146,6 +153,69 @@ def test_ask_on_empty_library_is_409(api) -> None:
 
     assert response.status_code == 409
     assert "empty" in response.json()["detail"]
+
+
+def test_ask_stream_on_empty_library_is_409(api) -> None:
+    client, _base, _tmp = api
+
+    response = client.post("/ask/stream", json={"question": "anything?"})
+
+    assert response.status_code == 409
+    assert "empty" in response.json()["detail"]
+
+
+def test_ask_stream_sends_tokens_then_the_json_answer(api) -> None:
+    client, _base, _tmp = api
+    client.post(
+        "/sources",
+        files={"file": ("physics.md", b"Light travels at 300,000 km/s.", "text/markdown")},
+    )
+
+    response = client.post("/ask/stream", json={"question": "how fast is light?"})
+
+    assert response.status_code == 200
+    assert response.headers["content-type"].startswith("text/event-stream")
+    events = _parse_sse(response.text)
+    tokens = [event["data"]["text"] for event in events if event["event"] == "token"]
+    assert "".join(tokens) == "Light is fast [1]."
+    done = next(event["data"] for event in events if event["event"] == "done")
+    assert done["text"] == "Light is fast [1]."
+    assert done["citations"][0]["source_title"] == "physics"
+    assert done["model"] == "fake-chat"
+
+
+def test_ask_stream_reports_a_generation_error_as_an_event(tmp_path: Path) -> None:
+    class ExplodingChat(FakeChatModel):
+        def chat_stream(self, system: str, user: str) -> Iterator[str]:
+            raise GenerationError("Ollama is down")
+
+    base = KnowledgeBase(tmp_path / "data", FakeEmbedder())
+    app = create_app(knowledge_base=base, chat_model=ExplodingChat("unused"))
+    with TestClient(app) as client:
+        client.post(
+            "/sources",
+            files={"file": ("notes.md", b"something to retrieve", "text/markdown")},
+        )
+        response = client.post("/ask/stream", json={"question": "what?"})
+
+    base.close()
+    events = _parse_sse(response.text)
+    assert events[-1]["event"] == "error"
+    assert "Ollama is down" in events[-1]["data"]["detail"]
+
+
+def _parse_sse(body: str) -> list[dict]:
+    events: list[dict] = []
+    for block in body.strip().split("\n\n"):
+        event_name = ""
+        data = ""
+        for line in block.split("\n"):
+            if line.startswith("event:"):
+                event_name = line.split(":", 1)[1].strip()
+            elif line.startswith("data:"):
+                data = line.split(":", 1)[1].strip()
+        events.append({"event": event_name, "data": json.loads(data)})
+    return events
 
 
 def test_scanned_pdf_is_400(api) -> None:
