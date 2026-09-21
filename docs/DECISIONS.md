@@ -222,7 +222,9 @@ Upgrading uv (0.12.5 → 0.12.17) stopped *newly created* venvs from being affec
 reinstalling the package into an existing venv still reintroduced the flag.
 
 **Decision.** Do not depend on the `.pth` mechanism. Set `pythonpath = ["src"]` in the
-pytest configuration, and run the server with `uvicorn --app-dir src`.
+pytest configuration, run the server with `uvicorn --app-dir src`, and invoke the CLI with
+`PYTHONPATH=src`. The console script installed by `[project.scripts]` imports the package
+the ordinary way, so it needs the same help.
 
 **Consequences.** The repository now works on a fresh checkout with no manual step and no
 dependence on an OS flag, a uv version, and a CPython behaviour all lining up. The cost is
@@ -347,3 +349,36 @@ why.
 **Why it is not throwaway.** The naive implementation is retained as a **test oracle**:
 when Qdrant is introduced, we assert it returns the same ranking. Validating a fast
 implementation against a simple reference is a practice worth keeping.
+
+---
+
+## ADR-0018 — Remove citation markers that match no excerpt
+
+**Date:** 2026-09-20 · **Status:** Accepted
+
+**Context.** Found by a live test, not by reasoning. Given a prompt containing a single
+excerpt numbered `[1]`, `llama3.1:8b` answered `"Tuesdays [2]."` — citing a number that did
+not exist. Our validation correctly refused to fabricate a citation for `[2]`, but the
+answer text still displayed `[2]` while no source 2 was listed, which reads as a bug in
+VoiceLM rather than a limitation of the model.
+
+**Decision.** Markers that match no excerpt are removed from the answer text, along with
+the whitespace before them, so `"Tuesdays [2]."` becomes `"Tuesdays."`. The discarded
+markers are recorded on `Answer.unsupported_markers` and surfaced as a note by the CLI.
+
+**Why not map them to the nearest valid excerpt.** We cannot know what the model meant, and
+guessing would produce a citation that points at text which may not support the claim —
+precisely the failure this system exists to prevent. Dropping the marker while keeping the
+claim is the only honest option.
+
+**Why record rather than silently drop.** A non-empty `unsupported_markers` is direct
+evidence the answer is less grounded than it appears. Hiding that would remove a signal we
+will want when evaluating answer quality and comparing models.
+
+**Invariant this establishes.** The markers visible in an answer and the citations listed
+beneath it always agree. A live test asserts exactly that.
+
+**Related finding.** Smaller chunks reduce the problem, because with several excerpts the
+model has real numbers to choose from. A document that collapses into one chunk is the
+worst case, and also produces citations spanning the whole document. This is why
+`--chunk-chars` is exposed on the CLI.

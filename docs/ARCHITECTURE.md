@@ -53,8 +53,27 @@ The entire product brain. Runs as a standalone process and is useful without any
 | `storage/` | SQLite and Qdrant access. |
 | `api/` | FastAPI routes — a thin shell over the modules above. |
 
-`domain/`, `ingestion/`, and `api/` exist today. The rest is created as each milestone
-needs it, rather than as empty folders up front.
+All of the above except `storage/` exists today, plus a thin `cli.py`. `storage/` arrives
+in Milestone 1B; until then embeddings live in memory and are rebuilt on each run.
+
+### What makes an answer grounded
+
+Three mechanisms, none of which relies on the model being trustworthy:
+
+1. **The prompt contains only the retrieved excerpts**, with an instruction to use nothing
+   else.
+2. **A sanctioned refusal sentence** is supplied, so the model is not cornered into
+   inventing an answer when the excerpts do not cover the question.
+3. **Citation details come from our ingestion records, never from the model.** The model
+   supplies only a bracket number. Source, title, and character offsets are ours, so a
+   citation cannot be fabricated — the worst case is a marker pointing at the wrong
+   excerpt, or at nothing, which we detect and remove (ADR-0018).
+
+Two guards exist for failures that otherwise produce no symptom. If Ollama reports a prompt
+token count that reaches `num_ctx`, the prompt was truncated and some excerpts never
+reached the model, so we raise rather than return a plausible ungrounded answer. And the
+excerpt budget truncates the *ranking* before the server can truncate the *prompt*, so when
+something has to be dropped it is the least relevant excerpt, on purpose.
 
 ### The ingestion pipeline
 
@@ -144,7 +163,8 @@ fact.
 
 | Process | How it starts | Address |
 |---|---|---|
-| Python backend | Manually, `uv run uvicorn ...` | `127.0.0.1:8000` |
+| Python backend | Manually, `uv run uvicorn --app-dir src ...` | `127.0.0.1:8000` |
+| CLI | `PYTHONPATH=src ./.venv/bin/voicelm ask ...` | n/a |
 | Ollama | macOS background service | `127.0.0.1:11434` |
 | Qdrant | In-process (Phase 1) | none — local mode |
 | SQLite | In-process | a file on disk |

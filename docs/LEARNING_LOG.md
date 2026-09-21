@@ -276,7 +276,104 @@ beats repeating it.
 
 ---
 
-## Queued for Milestone 1, Step 3
+## Milestone 1, Step 3 — Grounded answers and citations (2026-09-20)
 
-Tokens and context windows, quantization, prompt construction for grounded answers, and
-later approximate nearest neighbour search (HNSW) when Qdrant arrives.
+### Tokens and the context window as a shared budget
+Models read *tokens*, roughly four characters of English each. The context window is a hard
+ceiling on how many go in at once, and it is shared: instructions, retrieved excerpts,
+conversation history, and the generated answer all draw from the same allowance. Exceed it
+and text is dropped with no error.
+
+We spend it deliberately. Excerpts get a 12,000-character budget (about 3,000 tokens),
+which leaves the rest of an 8,192-token window for the instructions and the answer. When
+the budget is exceeded, `select_within_budget` truncates the *ranking* rather than letting
+Ollama truncate the *prompt*, because we would rather drop the least relevant excerpt on
+purpose than have the server drop the beginning of the prompt silently.
+
+### Quantization
+`llama3.1:8b` has 8 billion parameters. At full 16-bit precision that would be about 16 GB
+of weights; the file is 4.9 GB because each weight is compressed to roughly 4 bits. That
+compression is the entire reason this runs on a laptop, and it costs a little accuracy.
+Measured on this machine: 18.9 tokens per second, with an 11-second first load that is then
+cached for five minutes.
+
+### Temperature zero
+Temperature controls randomness in token selection. We set it to 0 so the model reproduces
+the excerpts faithfully rather than creatively, and so tests are deterministic. For a
+grounded question-answering system, variety is not a feature.
+
+### What actually makes an answer "grounded"
+Three things working together, and none of them is the model being trustworthy:
+1. The prompt contains only the retrieved excerpts and instructs the model to use nothing
+   else.
+2. The model is given a sanctioned way out — a specific refusal sentence — so it is not
+   cornered into inventing an answer. Without that, refusal is not an available behaviour.
+3. Citation details are read from *our* ingestion records, never from the model. The model
+   supplies only a number. The source, title, and character offsets come from our data, so
+   a citation cannot be hallucinated — the worst the model can do is point at the wrong
+   excerpt, or at a number that does not exist.
+
+### Detecting silent truncation
+If Ollama's reported `prompt_eval_count` reaches `num_ctx`, the front of the prompt was
+discarded and some excerpts never reached the model. The answer can look perfectly
+reasonable while being ungrounded, so we raise an error instead. A guard for a failure with
+no visible symptom is worth more than one for a failure that announces itself.
+
+### The bug the live test found
+Given a prompt with a single excerpt `[1]`, llama3.1:8b answered `"Tuesdays [2]."` — citing
+a number that did not exist. Our validation correctly refused to invent a citation for
+`[2]`, so the test failed with `citations = ()` while the text still displayed `[2]`.
+
+That is a real product bug and no amount of reasoning about the code would have found it;
+it needed a real model. The fix (ADR-0018) removes markers that match no excerpt, records
+them on `Answer.unsupported_markers`, and establishes the invariant that the markers shown
+in an answer and the citations listed beneath it always agree.
+
+Worth sitting with the shape of this. The unit tests all passed. The integration tests all
+passed. The thing that broke was the model not following an instruction, which is a class
+of bug that only exists in systems with a model in them, and the only way to find it is to
+run the model.
+
+### Two test failures, two different lessons
+The first failure was the bug above. The second was my own test fixture: the document was
+small enough that the default 1000-character chunking collapsed it into one chunk, so the
+citation tests were exercising a single-excerpt case that barely occurs in practice. Fixed
+by chunking the fixture smaller, and by adding a test that asserts the fixture produces
+several chunks — a guard on the test setup itself, so it cannot silently degrade into
+checking nothing.
+
+### Seeing the chunk-size tradeoff for real
+Running the CLI on an 864-character document with default settings produced one chunk, and
+therefore a citation reading `characters 0-864` — technically correct and useless, since it
+points at the entire document. Re-running with `--chunk-chars 250` produced five chunks and
+a citation of `characters 135-360`, which points at the actual passage. The abstract
+tradeoff from Step 1 became visible in output: chunk size is the main lever on how precise
+a citation can be.
+
+### Keeping logic out of the entry point
+`cli.py` parses arguments, calls functions, and prints. That is all. The same functions will
+sit behind HTTP endpoints later with no rewrite, which only works because none of the logic
+lives in the entry point. Progress goes to stderr and the answer to stdout, so the answer
+can be piped somewhere without the progress lines coming along.
+
+### A macOS debugging lesson: hardlinks and wedged binaries
+Killing processes mid-`uv sync` left four `ruff` processes in state `UE` — uninterruptible
+and unkillable, not even by `kill -9`. Every subsequent `ruff` invocation hung too, and so
+did `pytest`, while `ls` and `df` stayed instant, which ruled out a general filesystem
+problem.
+
+The cause: uv saves space by *hardlinking* venv binaries to a single copy in its global
+cache, so every project shares one inode. Once a process wedged that inode, every `exec` of
+that file blocked. Deleting `.venv` alone would not have helped, because a fresh sync would
+hardlink to the same wedged inode. `UV_LINK_MODE=copy uv sync` forced real copies with new
+inodes, confirmed by `stat` showing `links=1`, and everything worked immediately.
+
+The transferable part: when a binary hangs rather than failing, suspect the file itself
+rather than the program, and check whether something else shares its inode.
+
+---
+
+## Queued for Milestone 1B
+
+Approximate nearest neighbour search (HNSW) and what Qdrant buys over brute force, SQLite
+schema and migrations, and persisting vectors so ingestion is not repeated on every run.

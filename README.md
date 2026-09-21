@@ -7,8 +7,11 @@ Everything runs locally. Your documents never leave your machine.
 
 ## Status
 
-**Milestone 0 — project skeleton.** The repository, documentation, and a Python backend
-with a health check and a passing test. No AI functionality yet.
+**Milestone 1 — the retrieval loop works.** Import a `.txt` or `.md` file and ask a
+question about it from the command line; answers come back grounded in the document with
+citations to exact character ranges. Everything runs locally against Ollama.
+
+Not yet: PDFs, persistent storage, an HTTP API for this, or any UI.
 
 See [`docs/PRODUCT_SPEC.md`](docs/PRODUCT_SPEC.md) for where this is going and
 [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) for how it is put together.
@@ -39,6 +42,44 @@ uv run uvicorn --app-dir src voicelm.api.app:app --reload
 
 `--app-dir src` is required rather than optional; see ADR-0012 for why we do not rely on
 the editable install's import path.
+
+## Asking a question
+
+Requires Ollama running with two models pulled:
+
+```bash
+brew install ollama
+brew services start ollama
+ollama pull nomic-embed-text    # embeddings, 274 MB
+ollama pull llama3.1:8b         # generation, 4.9 GB
+```
+
+Then, from `backend/`:
+
+```bash
+PYTHONPATH=src ./.venv/bin/voicelm ask \
+  --source notes.md \
+  "Why did we choose that approach?"
+```
+
+```
+  notes.md: 5 chunks embedded in 0.1s
+  searching 5 chunks...
+
+Re-embedding unchanged documents was consuming roughly 80% of ingestion time. [1]
+
+Sources:
+  [1] notes, characters 135-360
+      "...hashing by content means renaming a file does not invalidate its cache entry..."
+```
+
+`PYTHONPATH=src` is needed for the same reason as `--app-dir src` above (ADR-0012).
+
+Useful options: `--source` may be repeated to search several documents; `--top-k` sets how
+many excerpts are retrieved; `--chunk-chars` and `--chunk-overlap` control chunking, which
+is the main lever on how precise a citation is.
+
+If the documents do not contain the answer, VoiceLM says so rather than inventing one.
 
 Then check that it is alive:
 

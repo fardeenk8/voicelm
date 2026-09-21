@@ -60,3 +60,31 @@ class EmbeddedChunk:
     @property
     def dimensions(self) -> int:
         return len(self.vector)
+
+
+@dataclass(frozen=True)
+class Citation:
+    """Where one claim in an answer came from.
+
+    `marker` is the number the model wrote in the answer text, so `[2]` in the prose and
+    the citation labelled 2 refer to the same excerpt. Everything else is recorded from our
+    own ingestion records, never from the model, so a citation cannot be hallucinated.
+    """
+
+    marker: int
+    chunk_id: str
+    source_id: str
+    source_title: str
+    start_char: int
+    end_char: int
+    quote: str
+
+
+@dataclass(frozen=True)
+class Answer:
+    text: str
+    citations: tuple[Citation, ...]
+    model: str
+    # Markers the model wrote that matched no excerpt. Removed from `text`, but recorded
+    # because they are direct evidence the answer is less grounded than it appears.
+    unsupported_markers: tuple[int, ...] = ()
