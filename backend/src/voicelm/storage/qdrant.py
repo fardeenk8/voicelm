@@ -149,6 +149,18 @@ class QdrantVectorIndex:
             ),
         )
 
+    def count_by_source(self, source_id: str) -> int:
+        """How many vectors belong to this source. Used to detect a half-finished ingest."""
+        if not self._client.collection_exists(COLLECTION):
+            return 0
+        result = self._client.count(
+            COLLECTION,
+            count_filter=Filter(
+                must=[FieldCondition(key="source_id", match=MatchValue(value=source_id))]
+            ),
+        )
+        return int(result.count)
+
     def _ensure_collection(self, dimensions: int) -> None:
         if not self._client.collection_exists(COLLECTION):
             self._client.create_collection(

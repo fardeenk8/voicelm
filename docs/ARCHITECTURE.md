@@ -53,10 +53,10 @@ The entire product brain. Runs as a standalone process and is useful without any
 | `storage/` | SQLite and Qdrant access. |
 | `api/` | FastAPI routes — a thin shell over the modules above. |
 
-All of the above exists today except the dual-write `KnowledgeBase` orchestrator. Vectors
-live in Qdrant local mode (`storage/qdrant.py`); source and chunk text live in SQLite
-(`storage/sqlite.py`). The CLI still re-embeds in memory on every `ask` until Step 3
-wires the two stores together.
+All of the above exists today except the CLI split. `KnowledgeBase` (`knowledge.py`)
+ingests into SQLite then Qdrant, skips unchanged files, and searches by joining Qdrant
+ids to SQLite passages. The CLI still re-embeds in memory on every `ask` until Step 4
+calls `KnowledgeBase` instead.
 
 ### What makes an answer grounded
 

@@ -422,4 +422,25 @@ loading the rows is a second step.
 **Tradeoff.** Every question pays one extra SQLite lookup. At this scale that is noise
 compared with embedding the question.
 
+---
+
+## ADR-0021 — SQLite first, then Qdrant; skip only if the index is complete
+
+**Date:** 2026-09-21 · **Status:** Accepted
+
+**Decision.** `KnowledgeBase.ingest` embeds in memory, writes SQLite, then deletes and
+replaces that source's vectors in Qdrant. If Qdrant fails on a *new* file, the SQLite
+row is deleted. If it fails on an *update*, the SQLite row stays (new text) and the
+vectors for that source are removed.
+
+Skip-if-unchanged requires both: same `content_hash` *and* `count_by_source == chunk
+count`. A crashed write therefore repairs on the next ingest instead of being skipped
+forever with no vectors.
+
+**Why embed first.** A failed Ollama call then leaves neither store touched.
+
+**Why not one distributed transaction.** SQLite and Qdrant cannot share a transaction.
+The skip rule is how we recover without building a write-ahead log of our own.
+
+
 

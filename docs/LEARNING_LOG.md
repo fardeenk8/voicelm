@@ -443,8 +443,32 @@ instead of creating a duplicate.
 
 ---
 
-## Queued for Milestone 1B, Steps 3–4
+## Milestone 1B, Step 3 — KnowledgeBase (2026-09-21)
 
-The dual-write orchestrator (`KnowledgeBase`), skip-if-unchanged, and splitting the CLI
-into `ingest` / `ask` / `sources`.
+### The join
+`search` is the sentence the last exercise was pointing at: Qdrant returns `VectorHit`
+ids, SQLite returns chunks in that same order, and we wrap them as `SearchResult` so
+`answer_question` does not care where the passages came from.
+
+### Skip vs repair
+"File unchanged" is not enough to skip. If Qdrant died after SQLite committed, the hash
+still matches and a naive skip would never write vectors again. Completeness is
+`vector_count == chunk_count` for that source.
+
+### Dual-write without a shared transaction
+Two libraries cannot commit together. Embed first (no writes), SQLite next, Qdrant last.
+A new file that fails in Qdrant is deleted from SQLite so we do not list a document you
+cannot search. An *update* that fails in Qdrant keeps the new text and drops old vectors;
+the next ingest sees an incomplete index and repairs.
+
+### Protocol, not a class hierarchy
+`Embedder` is a typing `Protocol`: "has `embed_chunks` and `embed_query`." Tests pass a
+fake; production passes `OllamaEmbedder`. No inheritance, no extra files.
+
+---
+
+## Queued for Milestone 1B, Step 4
+
+Split the CLI into `ingest` / `ask` / `sources` so a document is stored once and
+questions do not re-embed it.
 
