@@ -576,6 +576,22 @@ through App Transport Security.
 returning a list, and `readAsBytes()` on the file. The analyzer caught the old call
 before we ever ran the app.
 
+### Spaces vanished on screen
+The strings in Dart still contained spaces. On this Mac (macOS 26 + Flutter 3.41)
+system fonts — including Helvetica Neue — were drawn with a zero-width space, so
+"Ask your documents" became "Askyourdocuments". Switching the *name* of a system
+font was not enough. The fix is a bundled TTF (Source Sans 3) plus `wordSpacing: 4`
+on every text style, and `flutter run --no-enable-impeller`. This is a renderer
+bug, not a model or API bug.
+
+### Add-document did nothing
+`file_picker` on macOS checks for `com.apple.security.files.user-selected.read-only`
+before opening a dialog. We have that entitlement in the plist, but Debug builds are
+unsigned, so the entitlement is never attached to the process. The plugin threw
+`ENTITLEMENT_NOT_FOUND` and we did not catch it, so the + button looked dead.
+`FilePicker.skipEntitlementsChecks()` in debug is the matching workaround.
+The exception is now shown in the banner if a pick fails for any other reason.
+
 ### Codesign vs Documents
 The repo lives under `Documents`. File Provider attaches `com.apple.FinderInfo` to the
 built `.app`, and `codesign` refuses it: "resource fork, Finder information, or similar

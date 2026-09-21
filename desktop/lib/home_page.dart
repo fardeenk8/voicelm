@@ -1,5 +1,6 @@
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 
 import 'api.dart';
 import 'models.dart';
@@ -57,21 +58,21 @@ class _HomePageState extends State<HomePage> {
   }
 
   Future<void> _upload() async {
-    final files = await FilePicker.pickFiles(
-      type: FileType.custom,
-      allowedExtensions: const ['txt', 'md', 'markdown', 'pdf'],
-    );
-    if (files.isEmpty) return;
-
-    final file = files.single;
-    final bytes = await file.readAsBytes();
-
-    setState(() {
-      _busy = true;
-      _error = null;
-      _status = 'Ingesting ${file.name}…';
-    });
     try {
+      final files = await FilePicker.pickFiles(
+        type: FileType.custom,
+        allowedExtensions: const ['txt', 'md', 'markdown', 'pdf'],
+      );
+      if (files.isEmpty) return;
+
+      final file = files.single;
+      final bytes = await file.readAsBytes();
+
+      setState(() {
+        _busy = true;
+        _error = null;
+        _status = 'Ingesting ${file.name}…';
+      });
       final result = await widget.api.upload(filename: file.name, bytes: bytes);
       await _refreshLibrary();
       if (!mounted) return;
@@ -80,13 +81,21 @@ class _HomePageState extends State<HomePage> {
         _busy = false;
       });
     } on ApiException catch (error) {
-      if (!mounted) return;
-      setState(() {
-        _error = error.message;
-        _status = null;
-        _busy = false;
-      });
+      _showUploadError(error.message);
+    } on PlatformException catch (error) {
+      _showUploadError(error.message ?? error.code);
+    } catch (error) {
+      _showUploadError(error.toString());
     }
+  }
+
+  void _showUploadError(String message) {
+    if (!mounted) return;
+    setState(() {
+      _error = message;
+      _status = null;
+      _busy = false;
+    });
   }
 
   Future<void> _remove(LibrarySource source) async {

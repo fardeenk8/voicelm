@@ -58,6 +58,12 @@ flutter:
   # included with your application, so that you can use the icons in
   # the material Icons class.
   uses-material-design: true
+  fonts:
+    - family: SourceSans3
+      fonts:
+        - asset: fonts/SourceSans3-Regular.ttf
+        - asset: fonts/SourceSans3-Semibold.ttf
+          weight: 600
 
   # To add assets to your application, add an assets section, like this:
   # assets:
