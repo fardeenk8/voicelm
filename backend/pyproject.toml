@@ -5,6 +5,7 @@ description = "Privacy-first, voice-first personal knowledge workspace — AI ba
 requires-python = ">=3.13"
 dependencies = [
     "fastapi>=0.115",
+    "httpx2>=2.13.0",
     "uvicorn[standard]>=0.32",
 ]
 

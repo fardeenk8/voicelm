@@ -42,3 +42,21 @@ class Chunk:
     start_char: int
     end_char: int
     ordinal: int
+
+
+@dataclass(frozen=True)
+class EmbeddedChunk:
+    """A chunk together with the vector representing its meaning.
+
+    `model` is recorded because vectors from different embedding models are not
+    comparable — mixing them silently returns nonsense rather than failing. Carrying the
+    model name lets us detect that (ADR-0008).
+    """
+
+    chunk: Chunk
+    vector: tuple[float, ...]
+    model: str
+
+    @property
+    def dimensions(self) -> int:
+        return len(self.vector)

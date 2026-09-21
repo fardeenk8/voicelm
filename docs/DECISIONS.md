@@ -321,9 +321,13 @@ which the available disk cannot spare.
 produced it, which turns switching embedding models into a controlled reindex rather than
 silent corruption. This decision is where that foresight earns its keep.
 
-**Operational note.** Ollama defaults to a 2048-token context window regardless of what
-the model supports. Llama 3.1 handles 128k, so `num_ctx` must be set explicitly or
-retrieved excerpts are silently truncated and answers degrade with no error.
+**Operational note, corrected against the installed version.** Ollama does not use the
+model's full context window by default. On this machine (Ollama 0.34.2, Apple M4, 11.8 GiB
+of usable unified memory) the server log reports `vram-based default context
+default_num_ctx=4096`, so the default is derived from available memory rather than being a
+fixed 2048 as older versions used. Either way it is far below the 128k Llama 3.1 supports,
+so `num_ctx` must be set explicitly — otherwise retrieved excerpts are silently truncated
+and answers degrade with no error.
 
 ---
 

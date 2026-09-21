@@ -205,8 +205,78 @@ decided consciously and written down (ADR-0014).
 
 ---
 
-## Queued for Milestone 1, Steps 2 and 3
+## Milestone 1, Step 2 — Embeddings and search (2026-09-20)
 
-To be filled in as we cover them: embeddings and vector space, cosine similarity, tokens
-and context windows, quantization, prompt construction for grounded answers, and later
-approximate nearest neighbour search (HNSW) when Qdrant arrives.
+### What an embedding turned out to be, concretely
+`nomic-embed-text` returns **768 floating point numbers** per piece of text. That list is a
+position in a 768-dimensional space, arranged by training so that text with similar
+meaning lands nearby. Nothing about it is human-readable; its only useful property is
+relative distance to other vectors from the same model.
+
+### Cosine similarity, and why length is ignored
+Cosine similarity is the cosine of the angle between two vectors: 1.0 for the same
+direction, 0.0 for perpendicular, -1.0 for opposite. The formula is the dot product
+divided by both lengths, and dividing by the lengths is exactly what removes magnitude
+from the comparison.
+
+That property matters practically: a 900-character chunk and a 200-character chunk about
+the same topic point the same way but have different magnitudes, and we want them to score
+the same. The test `test_length_is_ignored` pins it down — `[1,2,3]` and `[10,20,30]` score
+1.0.
+
+A zero vector has no direction, so the angle to it is undefined. We raise rather than
+return a made-up 0.0, because a silently wrong score is worse than a loud failure.
+
+### Why production systems normalise vectors
+If every vector is scaled to length 1 first, both divisions become divisions by 1, and
+cosine similarity reduces to a plain dot product — far fewer operations per comparison.
+We kept the explicit form because it is the definition and it is obviously correct;
+Qdrant will do the fast version. Worth recognising the pattern: write the clear version,
+let the specialised tool do the optimised one.
+
+### Brute-force search is not much code
+The entire vector store is a list plus a sort. Comparing a query against every stored
+vector is *linear* — fine for hundreds of chunks, hopeless for millions, which is the gap
+approximate nearest neighbour search exists to close. Having written the slow version, it
+is clear what Qdrant will actually be buying us, and it stays as the reference we check
+Qdrant against.
+
+### Testing HTTP code without a network
+`httpx2.MockTransport` intercepts requests and returns whatever response the test wants.
+This makes it easy to test failures that are awkward to provoke for real: a 404, a
+connection refusal, a response with one vector missing, a response with mismatched vector
+lengths. The client's logic is covered offline and runs in milliseconds.
+
+Separately, `test_embeddings_live.py` talks to the real Ollama and skips itself when
+Ollama is not running. The division is deliberate: mocks verify *our* logic, and live tests
+verify the thing no mock can — that the embeddings actually carry meaning.
+
+### The test that proves the whole premise
+`test_related_text_scores_higher_than_unrelated_text` embeds "How do I care for a young
+cat?", "Kittens need feeding several times a day.", and a sentence about mortgage rates.
+The related pair shares **no words** with the query while the unrelated pair shares one
+("the"). Keyword search would rank these backwards. It passes against real Ollama, which
+is the first concrete evidence that semantic search works rather than being a claim in a
+diagram.
+
+### Guarding against silent wrongness
+Two checks exist purely to turn quiet corruption into loud errors. The embedder verifies it
+got exactly as many vectors back as texts it sent, because a missing vector would shift
+every subsequent pairing and make every citation point at the wrong text. The store refuses
+vectors from a different model or of a different length, because vectors from different
+models occupy unrelated spaces and comparing them produces confident nonsense with no
+symptom. This is ADR-0008 as executable code rather than a note.
+
+### Reading the log instead of trusting documentation
+Ollama's startup log reported `library=Metal ... description="Apple M4"`, confirming GPU
+acceleration, and `vram-based default context default_num_ctx=4096`. That last line
+contradicted what had already been written in ADR-0016 (a fixed 2048 default), so the ADR
+was corrected against the observed behaviour. Checking a claim against the running system
+beats repeating it.
+
+---
+
+## Queued for Milestone 1, Step 3
+
+Tokens and context windows, quantization, prompt construction for grounded answers, and
+later approximate nearest neighbour search (HNSW) when Qdrant arrives.
