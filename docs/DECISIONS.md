@@ -464,3 +464,57 @@ function has to be written twice and can diverge.
 **Consequence.** `main` takes optional `knowledge_base` and `chat_model` arguments so
 tests can substitute fakes, and closes the base only when it opened it. Answers go to
 stdout; progress and warnings go to stderr, so an answer can be redirected cleanly.
+
+
+## ADR-0023 — One flat text plus a page index; chunks may cross page breaks
+
+**Date:** 2026-09-21 · **Status:** Accepted
+
+**Decision.** A PDF is extracted page by page, each page is cleaned, and the pages are
+joined into one `Source.text` with a `PageSpan` recording where each page landed. Chunk
+boundaries are *not* forced at page breaks. A citation looks up which span(s) overlap
+the chunk's character range and reports `page 7` or `pages 4–5`.
+
+**Why not one chunk per page.** Pages are a printing artifact. A sentence that continues
+across a page break is still one idea; cutting it in half would hurt retrieval, which
+matters more than making every citation a single page. It would also push PDF knowledge
+into `chunking.py`, which is format-agnostic and should stay that way.
+
+**Consequence.** Markdown and `.txt` files have an empty `pages` tuple — the honest
+representation, because they have no pages. SQLite stores spans in a `pages` table
+mirroring `chunks`; existing Markdown rows correctly have none.
+
+
+## ADR-0024 — Cite the physical page a viewer shows, not the printed page label
+
+**Date:** 2026-09-21 · **Status:** Accepted
+
+**Decision.** `PageSpan.number` is the 1-based position in the file, matching "page 4 of
+20" in a PDF viewer. It is not the printed folio (roman numerals on front matter, a
+paper that starts at page 412).
+
+**Why.** The user opens the file and goes to that page. Reconstructing printed labels
+from PDF metadata is unreliable and often absent. When the two disagree we will have
+been honest about which one we meant.
+
+
+## ADR-0025 — Extract PDFs with pypdf; NFKC ligatures only on PDF text
+
+**Date:** 2026-09-21 · **Status:** Accepted
+
+**Decision.** Use `pypdf` (MIT, pure Python) behind `extract_pages` / `assemble_pages`.
+Scanned PDFs (no text layer) are refused with `NoTextLayer` rather than ingested empty.
+PDF pages are run through Unicode NFKC before the shared `clean_text` pass so presentation
+forms such as ﬁ become the letters a searcher would type. Markdown stays on NFC only.
+
+**Why pypdf.** Small, no native library, AGPL-free. Extraction sits behind two functions,
+so swapping to pdfplumber later is a contained change (ADR-0010). PyMuPDF is better on
+columns but AGPL-3.0 is a shipping hazard.
+
+**Why refuse empty text.** Listing a scan in `sources` that matches nothing looks like a
+retrieval bug. OCR is Phase 2.
+
+**Why NFKC is PDF-only.** PDFs emit ligature glyphs; Markdown authors type `fi`. Applying
+NFKC to Markdown would also rewrite superscripts and compatibility characters we currently
+leave alone on purpose.
+

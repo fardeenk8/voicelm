@@ -11,13 +11,14 @@ import sys
 import time
 from pathlib import Path
 
-from voicelm.domain.models import Answer
+from voicelm.domain.models import Answer, Citation
 from voicelm.embeddings.ollama import DEFAULT_MODEL as DEFAULT_EMBED_MODEL
 from voicelm.embeddings.ollama import EmbeddingError, OllamaEmbedder
 from voicelm.generation.ollama import DEFAULT_MODEL as DEFAULT_CHAT_MODEL
 from voicelm.generation.ollama import GenerationError, OllamaChatModel
 from voicelm.ingestion.chunking import ChunkingConfig
 from voicelm.ingestion.loader import UndecodableFile, UnsupportedFileType
+from voicelm.ingestion.pdf import PdfExtractionError
 from voicelm.knowledge import KnowledgeBase
 
 QUOTE_PREVIEW_CHARS = 220
@@ -54,7 +55,7 @@ def build_parser() -> argparse.ArgumentParser:
         required=True,
         type=Path,
         metavar="PATH",
-        help="a .txt or .md file; repeat for several",
+        help="a .txt, .md, or .pdf file; repeat for several",
     )
     ingest.add_argument(
         "--chunk-chars",
@@ -109,7 +110,12 @@ def main(
         if arguments.command == "sources":
             return _list_sources(base)
         raise ValueError(f"unknown command {arguments.command}")
-    except (UnsupportedFileType, UndecodableFile, FileNotFoundError) as error:
+    except (
+        UnsupportedFileType,
+        UndecodableFile,
+        PdfExtractionError,
+        FileNotFoundError,
+    ) as error:
         print(f"error reading source: {error}", file=sys.stderr)
     except (EmbeddingError, GenerationError) as error:
         print(f"error talking to Ollama: {error}", file=sys.stderr)
@@ -199,11 +205,17 @@ def _print_answer(answer: Answer) -> None:
     print("Sources:")
     for citation in answer.citations:
         preview = " ".join(citation.quote.split())[:QUOTE_PREVIEW_CHARS]
-        print(
-            f"  [{citation.marker}] {citation.source_title}, "
-            f"characters {citation.start_char}-{citation.end_char}"
-        )
+        print(f"  [{citation.marker}] {citation.source_title}, {_location(citation)}")
         print(f'      "{preview}..."')
+
+
+def _location(citation: Citation) -> str:
+    chars = f"characters {citation.start_char}-{citation.end_char}"
+    if not citation.pages:
+        return chars
+    if len(citation.pages) == 1:
+        return f"page {citation.pages[0]}, {chars}"
+    return f"pages {citation.pages[0]}–{citation.pages[-1]}, {chars}"
 
 
 if __name__ == "__main__":

@@ -1,8 +1,10 @@
 from pathlib import Path
 
 import pytest
+from pdf_fixtures import make_pdf
 
 from voicelm.ingestion.loader import UndecodableFile, UnsupportedFileType, load_source
+from voicelm.ingestion.pdf import CorruptPdf, NoTextLayer
 
 
 def write(tmp_path: Path, name: str, content: str) -> Path:
@@ -89,3 +91,62 @@ def test_empty_file_loads_as_empty_text(tmp_path: Path) -> None:
 def test_missing_file_raises(tmp_path: Path) -> None:
     with pytest.raises(FileNotFoundError):
         load_source(tmp_path / "nope.txt")
+
+
+# --- PDFs ------------------------------------------------------------------------------
+
+
+def write_pdf(tmp_path: Path, name: str, pages: list[str]) -> Path:
+    path = tmp_path / name
+    path.write_bytes(make_pdf(pages))
+    return path
+
+
+def test_loads_a_pdf(tmp_path: Path) -> None:
+    source = load_source(write_pdf(tmp_path, "bio.pdf", ["Mitochondria make ATP."]))
+
+    assert "Mitochondria make ATP." in source.text
+    assert source.title == "bio"
+
+
+def test_a_pdf_carries_a_page_span_per_page(tmp_path: Path) -> None:
+    path = write_pdf(tmp_path, "bio.pdf", ["Page one text.", "Page two text."])
+
+    source = load_source(path)
+
+    assert [span.number for span in source.pages] == [1, 2]
+    for span, expected in zip(source.pages, ["Page one text.", "Page two text."], strict=True):
+        assert source.text[span.start_char : span.end_char] == expected
+
+
+def test_text_formats_carry_no_pages(tmp_path: Path) -> None:
+    """A Markdown file genuinely has no pages, so it claims none."""
+    assert load_source(write(tmp_path, "notes.md", "Body.")).pages == ()
+
+
+def test_pdf_extension_check_is_case_insensitive(tmp_path: Path) -> None:
+    path = write_pdf(tmp_path, "REPORT.PDF", ["Quarterly results."])
+
+    assert "Quarterly results." in load_source(path).text
+
+
+def test_a_scanned_pdf_is_refused_rather_than_ingested_empty(tmp_path: Path) -> None:
+    path = write_pdf(tmp_path, "scan.pdf", ["", ""])
+
+    with pytest.raises(NoTextLayer):
+        load_source(path)
+
+
+def test_a_pdf_that_is_not_a_pdf_is_refused(tmp_path: Path) -> None:
+    path = tmp_path / "broken.pdf"
+    path.write_bytes(b"%PDF-1.4 and then nonsense")
+
+    with pytest.raises(CorruptPdf):
+        load_source(path)
+
+
+def test_pdf_content_hash_follows_the_text(tmp_path: Path) -> None:
+    same = write_pdf(tmp_path, "a.pdf", ["Identical body."])
+    other = write_pdf(tmp_path, "b.pdf", ["Different body."])
+
+    assert load_source(same).content_hash != load_source(other).content_hash

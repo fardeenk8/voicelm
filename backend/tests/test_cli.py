@@ -8,6 +8,7 @@ chat model. So a passing test here means the wiring really works end to end.
 from pathlib import Path
 
 import pytest
+from pdf_fixtures import make_pdf
 
 from voicelm.cli import build_parser, default_data_dir, main
 from voicelm.domain.models import Chunk, EmbeddedChunk
@@ -127,11 +128,42 @@ def test_missing_file_is_a_friendly_error(base, tmp_path, capsys):
 
 
 def test_unsupported_extension_is_a_friendly_error(base, tmp_path, capsys):
-    path = tmp_path / "notes.pdf"
-    path.write_bytes(b"%PDF-1.4")
+    path = tmp_path / "slides.pptx"
+    path.write_bytes(b"not a document we handle")
 
     assert main(["ingest", "--source", str(path)], knowledge_base=base) == 1
     assert "error reading source" in capsys.readouterr().err
+
+
+def test_a_scanned_pdf_reports_rather_than_crashing(base, tmp_path, capsys):
+    path = tmp_path / "scan.pdf"
+    path.write_bytes(make_pdf(["", ""]))
+
+    assert main(["ingest", "--source", str(path)], knowledge_base=base) == 1
+    assert "OCR" in capsys.readouterr().err
+
+
+def test_a_pdf_is_ingested_and_listed(base, tmp_path, capsys):
+    path = tmp_path / "bio.pdf"
+    path.write_bytes(make_pdf(["Mitochondria make ATP.", "Ribosomes build proteins."]))
+
+    assert main(["ingest", "--source", str(path)], knowledge_base=base) == 0
+    assert main(["sources"], knowledge_base=base) == 0
+    assert "bio" in capsys.readouterr().out
+
+
+def test_a_pdf_citation_prints_the_page_number(base, tmp_path, capsys):
+    path = tmp_path / "bio.pdf"
+    path.write_bytes(make_pdf(["Mitochondria make ATP.", "Ribosomes build proteins."]))
+    main(["ingest", "--source", str(path)], knowledge_base=base)
+    capsys.readouterr()
+
+    model = FakeChatModel("Mitochondria make ATP [1].")
+    main(["ask", "what do mitochondria do?"], knowledge_base=base, chat_model=model)
+
+    captured = capsys.readouterr().out
+    assert "page" in captured
+    assert "bio" in captured
 
 
 def test_data_dir_defaults_to_cwd_then_env(tmp_path, monkeypatch):

@@ -7,13 +7,12 @@ Everything runs locally. Your documents never leave your machine.
 
 ## Status
 
-**Milestone 1B — the library persists.** Import `.txt` or `.md` files once and ask
-questions about them from the command line for as long as you like; answers come back
-grounded in your documents with citations to exact character ranges. Metadata lives in
-SQLite and vectors live in Qdrant, both on disk, so nothing is re-embedded on restart.
-Everything runs locally against Ollama.
+**Milestone 1C — PDFs cite a page.** Import `.txt`, `.md`, or `.pdf` files once and ask
+questions about them from the command line. Answers come back grounded in your documents
+with citations to exact character ranges, and for PDFs, to the physical page a viewer
+would show. Metadata lives in SQLite and vectors live in Qdrant, both on disk.
 
-Not yet: PDFs, an HTTP API for ingestion or asking, or any UI.
+Not yet: scanned PDFs (no OCR), an HTTP API for ingestion or asking, or any UI.
 
 See [`docs/PRODUCT_SPEC.md`](docs/PRODUCT_SPEC.md) for where this is going and
 [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) for how it is put together.
@@ -61,7 +60,7 @@ Import documents once. From `backend/`:
 ```bash
 PYTHONPATH=src ./.venv/bin/voicelm ingest \
   --source ../docs/ARCHITECTURE.md \
-  --source ../docs/DECISIONS.md
+  --source paper.pdf
 ```
 
 ```
@@ -85,6 +84,8 @@ rewrite. It removes an entire category of "is the container running?" debugging.
 Sources:
   [1] DECISIONS, characters 4985-6116
       "...keeping relational metadata in a vector database, which is not its purpose..."
+  [2] paper, page 7, characters 18420-19110
+      "...CataractNet is a lightweight CNN designed for fundus images..."
 ```
 
 `voicelm sources` lists what is in the library. Re-running `ingest` on an unchanged file

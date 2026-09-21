@@ -89,6 +89,7 @@ class KnowledgeBase:
             title=loaded.title,
             text=loaded.text,
             content_hash=loaded.content_hash,
+            pages=loaded.pages,
         )
         chunks = chunk_document(source, self._chunking)
         embedded = self._embedder.embed_chunks(chunks) if chunks else []

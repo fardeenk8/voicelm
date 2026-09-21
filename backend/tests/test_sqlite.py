@@ -2,7 +2,7 @@ from pathlib import Path
 
 import pytest
 
-from voicelm.domain.models import Chunk, Source
+from voicelm.domain.models import Chunk, PageSpan, Source
 from voicelm.ingestion.chunking import chunk_document
 from voicelm.ingestion.loader import hash_content
 from voicelm.storage.sqlite import (
@@ -15,7 +15,10 @@ META = IngestMeta(embedding_model="nomic-embed-text", chunk_max_chars=1000, chun
 
 
 def make_source(
-    path: Path, text: str, source_id: str = "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee"
+    path: Path,
+    text: str,
+    source_id: str = "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee",
+    pages: tuple[PageSpan, ...] = (),
 ) -> Source:
     return Source(
         id=source_id,
@@ -23,6 +26,7 @@ def make_source(
         title=path.stem,
         text=text,
         content_hash=hash_content(text),
+        pages=pages,
     )
 
 
@@ -119,6 +123,47 @@ def test_delete_removes_chunks_via_cascade(tmp_path: Path) -> None:
     assert store.delete(source.id) is True
     assert store.get(source.id) is None
     assert store.get_chunks(source.id) == []
+
+
+def test_page_spans_round_trip(tmp_path: Path) -> None:
+    store = open_store(tmp_path)
+    text = "Page one.\n\nPage two."
+    pages = (
+        PageSpan(number=1, start_char=0, end_char=9),
+        PageSpan(number=2, start_char=11, end_char=20),
+    )
+    source = make_source(tmp_path / "paper.pdf", text, pages=pages)
+
+    store.save(source, make_chunks(source), META)
+    record = store.get(source.id)
+
+    assert record is not None
+    assert record.source.pages == pages
+    for span, expected in zip(record.source.pages, ["Page one.", "Page two."], strict=True):
+        assert record.source.text[span.start_char : span.end_char] == expected
+
+
+def test_text_files_persist_with_no_pages(tmp_path: Path) -> None:
+    store = open_store(tmp_path)
+    source = make_source(tmp_path / "notes.md", "just text")
+    store.save(source, make_chunks(source), META)
+
+    record = store.get(source.id)
+
+    assert record is not None
+    assert record.source.pages == ()
+
+
+def test_delete_removes_pages_via_cascade(tmp_path: Path) -> None:
+    store = open_store(tmp_path)
+    pages = (PageSpan(number=1, start_char=0, end_char=4),)
+    source = make_source(tmp_path / "paper.pdf", "body", pages=pages)
+    store.save(source, make_chunks(source), META)
+
+    store.delete(source.id)
+
+    leftover = store._conn.execute("SELECT count(*) FROM pages").fetchone()[0]
+    assert leftover == 0
 
 
 def test_delete_unknown_id_returns_false(tmp_path: Path) -> None:

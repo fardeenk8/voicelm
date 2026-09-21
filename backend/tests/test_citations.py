@@ -1,6 +1,6 @@
 from pathlib import Path
 
-from voicelm.domain.models import Chunk, Source
+from voicelm.domain.models import Chunk, PageSpan, Source, pages_covering
 from voicelm.generation.citations import (
     extract_citations,
     invalid_markers,
@@ -116,3 +116,50 @@ def test_only_the_unsupported_marker_is_removed() -> None:
 
 def test_text_without_markers_is_unchanged() -> None:
     assert strip_unsupported_markers("No markers.", RESULTS) == "No markers."
+
+
+def test_pdf_citation_carries_the_overlapping_pages() -> None:
+    pages = (
+        PageSpan(number=1, start_char=0, end_char=20),
+        PageSpan(number=2, start_char=22, end_char=50),
+    )
+    sources = {
+        "src": Source(
+            id="src",
+            path=Path("paper.pdf"),
+            title="paper",
+            text="x" * 50,
+            content_hash="h",
+            pages=pages,
+        )
+    }
+    results = [
+        SearchResult(
+            chunk=Chunk(
+                id="src:0",
+                source_id="src",
+                text="from page two",
+                start_char=22,
+                end_char=35,
+                ordinal=0,
+            ),
+            score=0.9,
+        )
+    ]
+
+    [citation] = extract_citations("Claim [1].", results, sources)
+
+    assert citation.pages == (2,)
+
+
+def test_a_chunk_that_straddles_a_break_cites_both_pages() -> None:
+    pages = (
+        PageSpan(number=4, start_char=0, end_char=10),
+        PageSpan(number=5, start_char=12, end_char=30),
+    )
+
+    assert pages_covering(8, 16, pages) == (4, 5)
+
+
+def test_plain_text_has_no_pages_to_cite() -> None:
+    assert pages_covering(0, 10, ()) == ()

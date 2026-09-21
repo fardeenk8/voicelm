@@ -50,7 +50,7 @@ The entire product brain. Runs as a standalone process and is useful without any
 | Module | Responsibility |
 |---|---|
 | `domain/` | Plain data types: `Document`, `Chunk`, `Citation`. No I/O, depends on nothing. |
-| `ingestion/` | Extract text from files, clean it, split it into chunks. |
+| `ingestion/` | Extract text from files (including PDFs, page by page), clean it, split it into chunks. |
 | `embeddings/` | Turn text into vectors. |
 | `retrieval/` | Given a question vector, find the most relevant chunks. |
 | `generation/` | Assemble the prompt, call the LLM, attach citations. |
@@ -62,6 +62,10 @@ All of the above exists today, with `api/` still limited to a health check.
 through: it ingests into SQLite then Qdrant, skips unchanged files, and searches by
 joining Qdrant ids to SQLite passages. The CLI and, later, the API routes are both thin
 callers of it — neither writes to a store directly.
+
+PDFs are flattened into the same `Source.text` as Markdown, plus a `pages` index that
+maps character offsets back to physical page numbers. Chunking stays format-blind;
+citations look up the page after retrieval (ADR-0023).
 
 ### What makes an answer grounded
 

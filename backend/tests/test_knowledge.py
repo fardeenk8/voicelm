@@ -228,3 +228,22 @@ def test_a_reopened_library_searches_without_re_embedding(tmp_path: Path) -> Non
         assert second.ingest(path).status == "skipped"
     finally:
         second.close()
+
+
+def test_ingesting_a_pdf_keeps_its_page_map(workspace) -> None:
+    from pdf_fixtures import make_pdf
+
+    folder, base, _embedder = workspace
+    path = folder / "bio.pdf"
+    path.write_bytes(make_pdf(["Mitochondria make ATP.", "Ribosomes build proteins."]))
+
+    result = base.ingest(path)
+    hits, sources = base.search("mitochondria", top_k=1)
+
+    assert result.status == "ingested"
+    assert [span.number for span in result.source.pages] == [1, 2]
+    cited = sources[hits[0].chunk.source_id]
+    assert cited.pages == result.source.pages
+    assert cited.text[cited.pages[0].start_char : cited.pages[0].end_char].startswith(
+        "Mitochondria"
+    )

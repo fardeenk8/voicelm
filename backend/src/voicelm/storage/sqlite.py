@@ -14,7 +14,7 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
 
-from voicelm.domain.models import Chunk, Source
+from voicelm.domain.models import Chunk, PageSpan, Source
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS sources (
@@ -39,6 +39,14 @@ CREATE TABLE IF NOT EXISTS chunks (
 );
 
 CREATE INDEX IF NOT EXISTS chunks_source_id ON chunks(source_id);
+
+CREATE TABLE IF NOT EXISTS pages (
+    source_id TEXT NOT NULL REFERENCES sources(id) ON DELETE CASCADE,
+    number INTEGER NOT NULL,
+    start_char INTEGER NOT NULL,
+    end_char INTEGER NOT NULL,
+    PRIMARY KEY (source_id, number)
+);
 """
 
 
@@ -124,6 +132,7 @@ class SqliteMetadataStore:
                 ),
             )
             self._conn.execute("DELETE FROM chunks WHERE source_id = ?", (source.id,))
+            self._conn.execute("DELETE FROM pages WHERE source_id = ?", (source.id,))
             self._conn.executemany(
                 """
                 INSERT INTO chunks (id, source_id, text, start_char, end_char, ordinal)
@@ -141,20 +150,27 @@ class SqliteMetadataStore:
                     for chunk in chunks
                 ],
             )
+            self._conn.executemany(
+                """
+                INSERT INTO pages (source_id, number, start_char, end_char)
+                VALUES (?, ?, ?, ?)
+                """,
+                [(source.id, span.number, span.start_char, span.end_char) for span in source.pages],
+            )
 
     def get(self, source_id: str) -> SourceRecord | None:
         row = self._conn.execute("SELECT * FROM sources WHERE id = ?", (source_id,)).fetchone()
-        return _record_from_row(row) if row is not None else None
+        return self._record_from_row(row) if row is not None else None
 
     def get_by_path(self, path: Path) -> SourceRecord | None:
         row = self._conn.execute(
             "SELECT * FROM sources WHERE path = ?", (str(path.resolve()),)
         ).fetchone()
-        return _record_from_row(row) if row is not None else None
+        return self._record_from_row(row) if row is not None else None
 
     def list_sources(self) -> list[SourceRecord]:
         rows = self._conn.execute("SELECT * FROM sources ORDER BY ingested_at DESC").fetchall()
-        return [_record_from_row(row) for row in rows]
+        return [self._record_from_row(row) for row in rows]
 
     def delete(self, source_id: str) -> bool:
         """Delete a source and its chunks. Returns False if the id was unknown."""
@@ -189,22 +205,32 @@ class SqliteMetadataStore:
 
         return [by_id[chunk_id] for chunk_id in ids]
 
+    def _record_from_row(self, row: sqlite3.Row) -> SourceRecord:
+        source = Source(
+            id=row["id"],
+            path=Path(row["path"]),
+            title=row["title"],
+            text=row["text"],
+            content_hash=row["content_hash"],
+            pages=self._pages_for(row["id"]),
+        )
+        return SourceRecord(
+            source=source,
+            embedding_model=row["embedding_model"],
+            chunk_max_chars=row["chunk_max_chars"],
+            chunk_overlap=row["chunk_overlap"],
+            ingested_at=row["ingested_at"],
+        )
 
-def _record_from_row(row: sqlite3.Row) -> SourceRecord:
-    source = Source(
-        id=row["id"],
-        path=Path(row["path"]),
-        title=row["title"],
-        text=row["text"],
-        content_hash=row["content_hash"],
-    )
-    return SourceRecord(
-        source=source,
-        embedding_model=row["embedding_model"],
-        chunk_max_chars=row["chunk_max_chars"],
-        chunk_overlap=row["chunk_overlap"],
-        ingested_at=row["ingested_at"],
-    )
+    def _pages_for(self, source_id: str) -> tuple[PageSpan, ...]:
+        rows = self._conn.execute(
+            "SELECT number, start_char, end_char FROM pages WHERE source_id = ? ORDER BY number",
+            (source_id,),
+        ).fetchall()
+        return tuple(
+            PageSpan(number=row["number"], start_char=row["start_char"], end_char=row["end_char"])
+            for row in rows
+        )
 
 
 def _chunk_from_row(row: sqlite3.Row) -> Chunk:

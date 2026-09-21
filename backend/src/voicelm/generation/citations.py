@@ -9,7 +9,7 @@ the wrong excerpt, or cite a number that does not exist — which we detect.
 import re
 from collections.abc import Mapping, Sequence
 
-from voicelm.domain.models import Citation, Source
+from voicelm.domain.models import Citation, Source, pages_covering
 from voicelm.generation.prompt import title_for
 from voicelm.retrieval.store import SearchResult
 
@@ -33,6 +33,7 @@ def extract_citations(
 
         seen.add(marker)
         chunk = results[marker - 1].chunk
+        source = sources.get(chunk.source_id)
         citations.append(
             Citation(
                 marker=marker,
@@ -42,6 +43,9 @@ def extract_citations(
                 start_char=chunk.start_char,
                 end_char=chunk.end_char,
                 quote=chunk.text,
+                pages=pages_covering(chunk.start_char, chunk.end_char, source.pages)
+                if source is not None
+                else (),
             )
         )
 

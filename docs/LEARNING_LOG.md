@@ -497,3 +497,33 @@ match strings, which is slower and tells you less about why something broke.
 find it closed underneath it. "Whoever opens it closes it" is worth being explicit about
 once a program holds file handles.
 
+---
+
+## Milestone 1C — PDF ingestion and page citations (2026-09-21)
+
+### A PDF does not contain text
+It contains drawing instructions: "put glyph T at (72, 700)". Extraction reconstructs
+a string by heuristic. That is why two libraries disagree, why columns can come out
+interleaved, and why a scanned PDF — an image of paper — yields the empty string.
+
+### Why we refused empty rather than ingesting it
+A document with no text would list in `sources`, match nothing, and look like search is
+broken. `NoTextLayer` makes the missing capability (OCR) the error, instead of a silent
+empty library entry.
+
+### The page map is a lookup, not a chunking rule
+`Source.text` stays one string so chunking does not learn about PDFs. `PageSpan` records
+where each page landed. After retrieval we ask "which spans overlap this chunk?" That is
+how a character offset becomes "page 7", and how a chunk that crosses a break becomes
+"pages 4–5" instead of a lie.
+
+### Ligatures are a PDF problem
+IEEE papers emit `ﬁ` as one character. A user searching for "identification" would miss
+it. NFKC on PDF pages only turns that into `fi` without rewriting Markdown.
+
+### Test PDFs are generated, not committed
+A ~100-line helper writes a valid PDF-1.4 file (objects, xref table, trailer) so tests
+do not need `reportlab` or a binary fixture. That helper is also a look at why extraction
+is reconstruction: the only line break is a `T*` operator moving the cursor down.
+
+
