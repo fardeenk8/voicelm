@@ -444,3 +444,23 @@ The skip rule is how we recover without building a write-ahead log of our own.
 
 
 
+## ADR-0022 — The CLI is subcommands over a persistent library, not a one-shot pipeline
+
+**Date:** 2026-09-21 · **Status:** Accepted
+
+**Decision.** `voicelm` exposes `ingest`, `ask`, and `sources`. Each opens a
+`KnowledgeBase` at `--data-dir` (default `./data`, override `$VOICELM_DATA_DIR`) and calls
+it. The CLI imports `KnowledgeBase` only — never `SqliteMetadataStore` or
+`QdrantVectorIndex`. `ask --source PATH` is kept as a convenience that ingests first.
+
+**Why.** Before persistence, `ask --source FILE` was honest: the document existed for the
+duration of one command. Now importing and asking have different lifetimes, and folding
+them into one verb would hide the cost of embedding and re-pay it on every question.
+
+**Why route everything through `KnowledgeBase`.** The API routes in a later milestone need
+the same skip-if-unchanged and dual-write rules. Any logic that leaks into a command
+function has to be written twice and can diverge.
+
+**Consequence.** `main` takes optional `knowledge_base` and `chat_model` arguments so
+tests can substitute fakes, and closes the base only when it opened it. Answers go to
+stdout; progress and warnings go to stderr, so an answer can be redirected cleanly.

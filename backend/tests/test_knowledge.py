@@ -206,3 +206,25 @@ def test_blank_question_is_rejected(workspace) -> None:
 
     with pytest.raises(ValueError, match="cannot be empty"):
         base.search("   ")
+
+
+def test_a_reopened_library_searches_without_re_embedding(tmp_path: Path) -> None:
+    """The point of Milestone 1B: ingestion survives the process that did it."""
+    path = write_doc(tmp_path, "notes.md", TWO_PARAGRAPHS)
+    chunking = ChunkingConfig(max_chars=40, overlap_chars=10)
+
+    first = KnowledgeBase(tmp_path / "data", FakeEmbedder(), chunking=chunking)
+    first.ingest(path)
+    first.close()
+
+    embedder = FakeEmbedder()
+    second = KnowledgeBase(tmp_path / "data", embedder, chunking=chunking)
+    try:
+        hits, sources = second.search("Tell me about alpha", top_k=1)
+
+        assert "Alpha" in hits[0].chunk.text
+        assert sources[hits[0].chunk.source_id].title == "notes"
+        assert embedder.chunk_calls == 0  # only the query was embedded, not the document
+        assert second.ingest(path).status == "skipped"
+    finally:
+        second.close()

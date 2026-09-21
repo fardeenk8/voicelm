@@ -467,8 +467,33 @@ fake; production passes `OllamaEmbedder`. No inheritance, no extra files.
 
 ---
 
-## Queued for Milestone 1B, Step 4
+## Milestone 1B, Step 4 — the CLI over the library (2026-09-21)
 
-Split the CLI into `ingest` / `ask` / `sources` so a document is stored once and
-questions do not re-embed it.
+### Subcommands mark a change in lifetime
+`ask --source FILE` treated a document as something that exists for one command. Once
+ingestion is durable, importing and asking have genuinely different lifetimes, so they
+became different verbs: `ingest` writes, `ask` reads, `sources` inspects. `ask --source`
+survives as a convenience that ingests first, not as the only way in.
+
+### The CLI is not allowed to know about storage
+`cli.py` imports `KnowledgeBase` and never `SqliteMetadataStore` or `QdrantVectorIndex`.
+It parses arguments, calls one object, and prints. That is the same discipline the API
+routes will follow, which is why the next milestone is mostly wiring rather than redesign.
+
+### stdout is the answer, stderr is the commentary
+Progress lines, timings, and the unsupported-marker warning go to stderr; only the answer
+and its citations go to stdout. `voicelm ask ... > answer.txt` therefore captures the
+answer alone. Deciding which stream a line belongs on is a small API design decision.
+
+### Injecting dependencies is what made this testable
+`main(argv, knowledge_base=..., chat_model=...)` lets the tests pass a real
+`KnowledgeBase` over a tmp directory — real SQLite, real Qdrant — with only Ollama faked.
+Without those parameters the only way to test the CLI would be to spawn a subprocess and
+match strings, which is slower and tells you less about why something broke.
+
+### Closing what you opened
+`main` opens a `KnowledgeBase` only when the caller did not supply one, tracks that with
+`owned`, and closes it in a `finally`. A test that passed its own base would otherwise
+find it closed underneath it. "Whoever opens it closes it" is worth being explicit about
+once a program holds file handles.
 

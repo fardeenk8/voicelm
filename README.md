@@ -7,11 +7,13 @@ Everything runs locally. Your documents never leave your machine.
 
 ## Status
 
-**Milestone 1 — the retrieval loop works.** Import a `.txt` or `.md` file and ask a
-question about it from the command line; answers come back grounded in the document with
-citations to exact character ranges. Everything runs locally against Ollama.
+**Milestone 1B — the library persists.** Import `.txt` or `.md` files once and ask
+questions about them from the command line for as long as you like; answers come back
+grounded in your documents with citations to exact character ranges. Metadata lives in
+SQLite and vectors live in Qdrant, both on disk, so nothing is re-embedded on restart.
+Everything runs locally against Ollama.
 
-Not yet: PDFs, persistent storage, an HTTP API for this, or any UI.
+Not yet: PDFs, an HTTP API for ingestion or asking, or any UI.
 
 See [`docs/PRODUCT_SPEC.md`](docs/PRODUCT_SPEC.md) for where this is going and
 [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) for how it is put together.
@@ -37,13 +39,13 @@ cd backend
 uv sync                 # create the virtual environment and install dependencies
 uv run pytest           # run the tests
 uv run ruff check .     # lint
-uv run uvicorn --app-dir src voicelm.api.app:app --reload
 ```
 
-`--app-dir src` is required rather than optional; see ADR-0012 for why we do not rely on
-the editable install's import path.
+Commands that import `voicelm` need to be told where the source lives, either with
+`PYTHONPATH=src` or uvicorn's `--app-dir src`. That is required rather than optional; see
+ADR-0012 for why we do not rely on the editable install's import path.
 
-## Asking a question
+## Building a library and asking questions
 
 Requires Ollama running with two models pulled:
 
@@ -54,36 +56,56 @@ ollama pull nomic-embed-text    # embeddings, 274 MB
 ollama pull llama3.1:8b         # generation, 4.9 GB
 ```
 
-Then, from `backend/`:
+Import documents once. From `backend/`:
+
+```bash
+PYTHONPATH=src ./.venv/bin/voicelm ingest \
+  --source ../docs/ARCHITECTURE.md \
+  --source ../docs/DECISIONS.md
+```
+
+```
+  ARCHITECTURE.md: ingested, 11 chunks (1.0s)
+  DECISIONS.md: ingested, 25 chunks (1.0s)
+```
+
+Then ask, as many times as you like and in as many separate runs as you like:
 
 ```bash
 PYTHONPATH=src ./.venv/bin/voicelm ask \
-  --source notes.md \
-  "Why did we choose that approach?"
+  "Why did we choose Qdrant local mode instead of running a Qdrant server?"
 ```
 
 ```
-  notes.md: 5 chunks embedded in 0.1s
-  searching 5 chunks...
+  searching...
 
-Re-embedding unchanged documents was consuming roughly 80% of ingestion time. [1]
+Identical Python API, so the migration is a configuration change rather than a
+rewrite. It removes an entire category of "is the container running?" debugging. [1]
 
 Sources:
-  [1] notes, characters 135-360
-      "...hashing by content means renaming a file does not invalidate its cache entry..."
+  [1] DECISIONS, characters 4985-6116
+      "...keeping relational metadata in a vector database, which is not its purpose..."
 ```
 
-`PYTHONPATH=src` is needed for the same reason as `--app-dir src` above (ADR-0012).
+`voicelm sources` lists what is in the library. Re-running `ingest` on an unchanged file
+is reported as `skipped` and costs nothing; edit the file and it is re-embedded in place,
+keeping the same identity.
 
-Useful options: `--source` may be repeated to search several documents; `--top-k` sets how
-many excerpts are retrieved; `--chunk-chars` and `--chunk-overlap` control chunking, which
-is the main lever on how precise a citation is.
+Useful options: `--top-k` sets how many excerpts are retrieved; `--chunk-chars` and
+`--chunk-overlap` control chunking, which is the main lever on how precise a citation is;
+`--data-dir` (or `$VOICELM_DATA_DIR`) chooses where the library is stored, defaulting to
+`./data`.
 
 If the documents do not contain the answer, VoiceLM says so rather than inventing one.
 
-Then check that it is alive:
+## The HTTP API
+
+The API currently exposes only a health check. Ingesting and asking over HTTP comes in a
+later milestone; for now the CLI is the only way in.
 
 ```bash
+uv run uvicorn --app-dir src voicelm.api.app:app --reload
+
 curl http://127.0.0.1:8000/health
 # {"status":"ok","version":"0.1.0"}
 ```

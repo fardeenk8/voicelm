@@ -1,120 +1,181 @@
 """Command line entry point.
 
-Deliberately thin: it parses arguments, calls the modules that hold the logic, and prints.
-The same functions will sit behind HTTP endpoints later without being rewritten, which only
-works because none of the logic lives here.
-
-Progress goes to stderr and the answer goes to stdout, so the answer can be piped
-somewhere useful without the progress lines coming along.
+Deliberately thin: it parses arguments, calls KnowledgeBase, and prints. Progress goes
+to stderr and the answer goes to stdout, so the answer can be piped without the
+progress lines.
 """
 
 import argparse
+import os
 import sys
 import time
 from pathlib import Path
 
-from voicelm.domain.models import Answer, Source
+from voicelm.domain.models import Answer
 from voicelm.embeddings.ollama import DEFAULT_MODEL as DEFAULT_EMBED_MODEL
 from voicelm.embeddings.ollama import EmbeddingError, OllamaEmbedder
-from voicelm.generation.answering import answer_question
 from voicelm.generation.ollama import DEFAULT_MODEL as DEFAULT_CHAT_MODEL
 from voicelm.generation.ollama import GenerationError, OllamaChatModel
-from voicelm.ingestion.chunking import ChunkingConfig, chunk_document
-from voicelm.ingestion.loader import UndecodableFile, UnsupportedFileType, load_source
-from voicelm.retrieval.store import InMemoryVectorStore
+from voicelm.ingestion.chunking import ChunkingConfig
+from voicelm.ingestion.loader import UndecodableFile, UnsupportedFileType
+from voicelm.knowledge import KnowledgeBase
 
 QUOTE_PREVIEW_CHARS = 220
+
+
+def default_data_dir() -> Path:
+    """Where the catalog and vector index live.
+
+    Override with VOICELM_DATA_DIR or --data-dir. Default is ./data in the current
+    working directory (typically backend/).
+    """
+    raw = os.environ.get("VOICELM_DATA_DIR")
+    return Path(raw) if raw else Path.cwd() / "data"
 
 
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="voicelm", description="Ask questions about your own documents, locally."
     )
+    parser.add_argument(
+        "--data-dir",
+        type=Path,
+        default=None,
+        help="library directory (default: ./data or $VOICELM_DATA_DIR)",
+    )
+    parser.add_argument("--embed-model", default=DEFAULT_EMBED_MODEL)
+
     subcommands = parser.add_subparsers(dest="command", required=True)
 
-    ask = subcommands.add_parser("ask", help="ask a question about one or more documents")
-    ask.add_argument("question")
-    ask.add_argument(
+    ingest = subcommands.add_parser("ingest", help="add documents to the local library")
+    ingest.add_argument(
         "--source",
         action="append",
         required=True,
         type=Path,
         metavar="PATH",
-        help="a .txt or .md file to search; repeat for several",
+        help="a .txt or .md file; repeat for several",
     )
-    ask.add_argument("--top-k", type=int, default=5, help="excerpts to retrieve (default 5)")
-    # Exposed because chunk size is the main lever on citation precision: too large and a
-    # citation points at most of the document, too small and excerpts lose their context.
-    ask.add_argument(
+    ingest.add_argument(
         "--chunk-chars",
         type=int,
         default=ChunkingConfig.max_chars,
         help=f"characters per chunk (default {ChunkingConfig.max_chars})",
     )
-    ask.add_argument(
+    ingest.add_argument(
         "--chunk-overlap",
         type=int,
         default=ChunkingConfig.overlap_chars,
         help=f"characters repeated between chunks (default {ChunkingConfig.overlap_chars})",
     )
-    ask.add_argument("--embed-model", default=DEFAULT_EMBED_MODEL)
+
+    ask = subcommands.add_parser("ask", help="ask a question about ingested documents")
+    ask.add_argument("question")
+    ask.add_argument(
+        "--source",
+        action="append",
+        type=Path,
+        metavar="PATH",
+        help="ingest this file first, then ask (optional)",
+    )
+    ask.add_argument("--top-k", type=int, default=5, help="excerpts to retrieve (default 5)")
     ask.add_argument("--chat-model", default=DEFAULT_CHAT_MODEL)
+
+    subcommands.add_parser("sources", help="list documents in the local library")
 
     return parser
 
 
-def main(argv: list[str] | None = None) -> int:
+def main(
+    argv: list[str] | None = None,
+    *,
+    knowledge_base: KnowledgeBase | None = None,
+    chat_model: OllamaChatModel | None = None,
+) -> int:
     arguments = build_parser().parse_args(argv)
+    owned = knowledge_base is None
 
     try:
-        return _ask(arguments)
+        base = knowledge_base or _open_knowledge_base(arguments)
+    except ValueError as error:
+        print(f"error: {error}", file=sys.stderr)
+        return 1
+
+    try:
+        if arguments.command == "ingest":
+            return _ingest(arguments, base)
+        if arguments.command == "ask":
+            return _ask(arguments, base, chat_model)
+        if arguments.command == "sources":
+            return _list_sources(base)
+        raise ValueError(f"unknown command {arguments.command}")
     except (UnsupportedFileType, UndecodableFile, FileNotFoundError) as error:
         print(f"error reading source: {error}", file=sys.stderr)
     except (EmbeddingError, GenerationError) as error:
         print(f"error talking to Ollama: {error}", file=sys.stderr)
     except ValueError as error:
         print(f"error: {error}", file=sys.stderr)
+    finally:
+        if owned:
+            base.close()
 
     return 1
 
 
-def _ask(arguments: argparse.Namespace) -> int:
-    embedder = OllamaEmbedder(model=arguments.embed_model)
-    store = InMemoryVectorStore()
-    sources: dict[str, Source] = {}
-    config = ChunkingConfig(max_chars=arguments.chunk_chars, overlap_chars=arguments.chunk_overlap)
+def _open_knowledge_base(arguments: argparse.Namespace) -> KnowledgeBase:
+    data_dir = arguments.data_dir or default_data_dir()
+    chunking = ChunkingConfig(
+        max_chars=getattr(arguments, "chunk_chars", ChunkingConfig.max_chars),
+        overlap_chars=getattr(arguments, "chunk_overlap", ChunkingConfig.overlap_chars),
+    )
+    return KnowledgeBase(data_dir, OllamaEmbedder(model=arguments.embed_model), chunking)
 
-    # Ingestion happens on every run because nothing is persisted yet. Milestone 1B adds
-    # storage so this becomes a one-time cost per document.
+
+def _ingest(arguments: argparse.Namespace, base: KnowledgeBase) -> int:
     for path in arguments.source:
-        source = load_source(path)
-        chunks = chunk_document(source, config)
-
-        if not chunks:
-            print(f"  {path.name}: no text found, skipping", file=sys.stderr)
-            continue
-
         started = time.monotonic()
-        store.add(embedder.embed_chunks(chunks))
-        sources[source.id] = source
+        result = base.ingest(path)
         elapsed = time.monotonic() - started
-        plural = "chunk" if len(chunks) == 1 else "chunks"
+        plural = "chunk" if result.chunk_count == 1 else "chunks"
         print(
-            f"  {path.name}: {len(chunks)} {plural} embedded in {elapsed:.1f}s",
+            f"  {path.name}: {result.status}, {result.chunk_count} {plural} ({elapsed:.1f}s)",
             file=sys.stderr,
         )
+    return 0
 
-    if not sources:
-        print("no readable text in any source", file=sys.stderr)
+
+def _ask(
+    arguments: argparse.Namespace,
+    base: KnowledgeBase,
+    chat_model: OllamaChatModel | None,
+) -> int:
+    for path in arguments.source or []:
+        started = time.monotonic()
+        result = base.ingest(path)
+        elapsed = time.monotonic() - started
+        print(f"  {path.name}: {result.status} ({elapsed:.1f}s)", file=sys.stderr)
+
+    if not base.list_sources():
+        print("no documents in the library. Run: voicelm ingest --source FILE", file=sys.stderr)
         return 1
 
-    print(f"  searching {len(store)} chunks...", file=sys.stderr)
-    results = store.search(embedder.embed_query(arguments.question), top_k=arguments.top_k)
-
-    model = OllamaChatModel(model=arguments.chat_model)
-    answer = answer_question(arguments.question, results, sources, model)
-
+    model = chat_model or OllamaChatModel(model=arguments.chat_model)
+    print("  searching...", file=sys.stderr)
+    answer = base.ask(arguments.question, model, top_k=arguments.top_k)
     _print_answer(answer)
+    return 0
+
+
+def _list_sources(base: KnowledgeBase) -> int:
+    records = base.list_sources()
+    if not records:
+        print("library is empty")
+        return 0
+
+    for record in records:
+        chunks = base.chunk_count(record.source.id)
+        plural = "chunk" if chunks == 1 else "chunks"
+        print(f"  {record.source.title}  {record.source.path}  {chunks} {plural}")
     return 0
 
 
@@ -130,8 +191,6 @@ def _print_answer(answer: Answer) -> None:
         )
 
     if not answer.citations:
-        # No markers means the answer is either a refusal or ungrounded. Either way the
-        # user should know it is not backed by a specific passage.
         print()
         print("(no citations — this answer is not backed by a specific passage)")
         return

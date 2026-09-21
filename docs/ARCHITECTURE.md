@@ -1,6 +1,6 @@
 # VoiceLM — Architecture
 
-Last updated: 2026-09-20
+Last updated: 2026-09-21
 
 ## The one rule
 
@@ -26,13 +26,17 @@ reuse possible.
 │   ingestion → embeddings → retrieval → generation    │
 │                                                      │
 └────┬──────────────────┬──────────────────┬───────────┘
-     │ HTTP             │ HTTP             │ in-process
-     │ :11434           │ :6333            │ (no network)
+     │ HTTP             │ in-process       │ in-process
+     │ :11434           │ (no network)     │ (no network)
 ┌────▼─────────┐  ┌─────▼────────┐  ┌──────▼──────────────┐
 │  Ollama      │  │  Qdrant      │  │  SQLite             │
 │  local LLM   │  │  vectors     │  │  metadata + sources │
+│              │  │  data/qdrant │  │  data/voicelm.db    │
 └──────────────┘  └──────────────┘  └─────────────────────┘
 ```
+
+Qdrant runs embedded rather than as a server in Phase 1 (ADR-0007), so only Ollama
+involves a socket. Swapping to a real Qdrant server later is a connection-string change.
 
 ## Components
 
@@ -53,10 +57,11 @@ The entire product brain. Runs as a standalone process and is useful without any
 | `storage/` | SQLite and Qdrant access. |
 | `api/` | FastAPI routes — a thin shell over the modules above. |
 
-All of the above exists today except the CLI split. `KnowledgeBase` (`knowledge.py`)
-ingests into SQLite then Qdrant, skips unchanged files, and searches by joining Qdrant
-ids to SQLite passages. The CLI still re-embeds in memory on every `ask` until Step 4
-calls `KnowledgeBase` instead.
+All of the above exists today, with `api/` still limited to a health check.
+`KnowledgeBase` (`knowledge.py`) is the seam everything above the storage layer goes
+through: it ingests into SQLite then Qdrant, skips unchanged files, and searches by
+joining Qdrant ids to SQLite passages. The CLI and, later, the API routes are both thin
+callers of it — neither writes to a store directly.
 
 ### What makes an answer grounded
 
@@ -166,7 +171,7 @@ fact.
 | Process | How it starts | Address |
 |---|---|---|
 | Python backend | Manually, `uv run uvicorn --app-dir src ...` | `127.0.0.1:8000` |
-| CLI | `PYTHONPATH=src ./.venv/bin/voicelm ask ...` | n/a |
+| CLI | `PYTHONPATH=src ./.venv/bin/voicelm ingest\|ask\|sources ...` | n/a |
 | Ollama | macOS background service | `127.0.0.1:11434` |
 | Qdrant | In-process (Phase 1) | none — local mode |
 | SQLite | In-process | a file on disk |

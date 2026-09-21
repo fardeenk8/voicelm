@@ -1,8 +1,7 @@
 """The join between the catalog (SQLite) and the vector index (Qdrant).
 
-This is the object the CLI will call in the next step. Ingestion, skip-if-unchanged,
-search, and answering all go through here so neither store is written from a route
-handler or a command function.
+Ingestion, skip-if-unchanged, search, and answering all go through here so neither
+store is written from a route handler or a command function.
 """
 
 from collections.abc import Sequence
@@ -150,6 +149,9 @@ class KnowledgeBase:
 
     def list_sources(self) -> list[SourceRecord]:
         return self._catalog.list_sources()
+
+    def chunk_count(self, source_id: str) -> int:
+        return len(self._catalog.get_chunks(source_id))
 
     def _index_is_complete(self, source_id: str) -> bool:
         return self._index.count_by_source(source_id) == len(self._catalog.get_chunks(source_id))
