@@ -597,4 +597,28 @@ those are known before the first byte.
 `KnowledgeBase.ask_stream` is the one doorway; the route does not talk to Ollama.
 
 
+## ADR-0034 — GitHub via zipball; one Source per text file; cite path + line
+
+**Date:** 2026-09-23 · **Status:** Accepted
+
+**Decision.** Detect `github.com` URLs in `KnowledgeBase.ingest_url` (same doorway as
+YouTube). Download a zipball for the ref (default branch when omitted). Store under
+`data/files/github/<key>/` with a `meta.json` and a `tree/` of owned file copies.
+Index UTF-8 text/code files as separate `Source` rows; skip `node_modules`, build
+dirs, binaries, and oversize trees. Reuse `PageSpan` with `location_kind="line"`;
+`title` is `owner/repo:relative/path`; `origin_url` is the blob URL. Private repos
+use `VOICELM_GITHUB_TOKEN` or `GITHUB_TOKEN` from the environment — never the UI.
+
+**Why zipball.** One HTTP get, no `git` binary, same “backend fetches, library owns
+the snapshot” posture as web/YouTube. The Contents API is N+1 and rate-limit fragile.
+
+**Why one Source per file.** Citations need a concrete path. Concatenating the whole
+repo into one document would make `title` and line numbers ambiguous.
+
+**Why line spans.** Code questions need “line 42”, not only a character range. Markdown
+inside the tree uses the same kind for consistency.
+
+**Still deferred.** Gists, GitLab/Bitbucket, submodule recursion, Flutter token UI,
+indexing PDFs/images inside the zip.
+
 

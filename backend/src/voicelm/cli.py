@@ -16,8 +16,12 @@ from voicelm.embeddings.ollama import EmbeddingError, OllamaEmbedder
 from voicelm.generation.ollama import DEFAULT_MODEL as DEFAULT_CHAT_MODEL
 from voicelm.generation.ollama import GenerationError, OllamaChatModel
 from voicelm.ingestion.chunking import ChunkingConfig
+from voicelm.ingestion.github import GitHubError
 from voicelm.ingestion.loader import UndecodableFile, UnsupportedFileType
+from voicelm.ingestion.office import OfficeExtractionError
 from voicelm.ingestion.pdf import PdfExtractionError
+from voicelm.ingestion.web import WebFetchError
+from voicelm.ingestion.youtube import YouTubeError
 from voicelm.knowledge import KnowledgeBase
 from voicelm.paths import default_data_dir
 
@@ -42,10 +46,15 @@ def build_parser() -> argparse.ArgumentParser:
     ingest.add_argument(
         "--source",
         action="append",
-        required=True,
         type=Path,
         metavar="PATH",
-        help="a .txt, .md, or .pdf file; repeat for several",
+        help="a .txt, .md, .pdf, .docx, or .pptx file; repeat for several",
+    )
+    ingest.add_argument(
+        "--url",
+        action="append",
+        metavar="URL",
+        help="fetch a web page, YouTube video, or GitHub repo; repeat for several",
     )
     ingest.add_argument(
         "--chunk-chars",
@@ -69,7 +78,7 @@ def build_parser() -> argparse.ArgumentParser:
         metavar="PATH",
         help="ingest this file first, then ask (optional)",
     )
-    ask.add_argument("--top-k", type=int, default=5, help="excerpts to retrieve (default 5)")
+    ask.add_argument("--top-k", type=int, default=10, help="excerpts to retrieve (default 10)")
     ask.add_argument("--chat-model", default=DEFAULT_CHAT_MODEL)
 
     subcommands.add_parser("sources", help="list documents in the local library")
@@ -109,6 +118,10 @@ def main(
         UnsupportedFileType,
         UndecodableFile,
         PdfExtractionError,
+        OfficeExtractionError,
+        WebFetchError,
+        YouTubeError,
+        GitHubError,
         FileNotFoundError,
     ) as error:
         print(f"error reading source: {error}", file=sys.stderr)
@@ -133,13 +146,28 @@ def _open_knowledge_base(arguments: argparse.Namespace) -> KnowledgeBase:
 
 
 def _ingest(arguments: argparse.Namespace, base: KnowledgeBase) -> int:
-    for path in arguments.source:
+    paths = arguments.source or []
+    urls = arguments.url or []
+    if not paths and not urls:
+        print("provide at least one --source PATH or --url URL", file=sys.stderr)
+        return 1
+
+    for path in paths:
         started = time.monotonic()
         result = base.ingest(path)
         elapsed = time.monotonic() - started
         plural = "chunk" if result.chunk_count == 1 else "chunks"
         print(
             f"  {path.name}: {result.status}, {result.chunk_count} {plural} ({elapsed:.1f}s)",
+            file=sys.stderr,
+        )
+    for url in urls:
+        started = time.monotonic()
+        result = base.ingest_url(url)
+        elapsed = time.monotonic() - started
+        plural = "chunk" if result.chunk_count == 1 else "chunks"
+        print(
+            f"  {result.title}: {result.status}, {result.chunk_count} {plural} ({elapsed:.1f}s)",
             file=sys.stderr,
         )
     return 0
@@ -176,9 +204,8 @@ def _list_sources(base: KnowledgeBase) -> int:
     for record in records:
         chunks = base.chunk_count(record.source.id)
         plural = "chunk" if chunks == 1 else "chunks"
-        print(
-            f"  {record.source.id}  {record.source.title}  {record.source.path}  {chunks} {plural}"
-        )
+        where = record.source.origin_url or str(record.source.path)
+        print(f"  {record.source.id}  {record.source.title}  {where}  {chunks} {plural}")
     return 0
 
 
@@ -215,12 +242,27 @@ def _print_answer(answer: Answer) -> None:
 
 
 def _location(citation: Citation) -> str:
+    from voicelm.ingestion.transcript import format_timestamp
+
     chars = f"characters {citation.start_char}-{citation.end_char}"
-    if not citation.pages:
-        return chars
-    if len(citation.pages) == 1:
-        return f"page {citation.pages[0]}, {chars}"
-    return f"pages {citation.pages[0]}–{citation.pages[-1]}, {chars}"
+    parts: list[str] = []
+    if citation.origin_url:
+        parts.append(citation.origin_url)
+    if citation.pages:
+        if citation.location_kind == "timestamp":
+            stamps = [format_timestamp(second) for second in citation.pages]
+            if len(stamps) == 1:
+                parts.append(stamps[0])
+            else:
+                parts.append(f"{stamps[0]}–{stamps[-1]}")
+        else:
+            unit = citation.location_kind or "page"
+            if len(citation.pages) == 1:
+                parts.append(f"{unit} {citation.pages[0]}")
+            else:
+                parts.append(f"{unit}s {citation.pages[0]}–{citation.pages[-1]}")
+    parts.append(chars)
+    return ", ".join(parts)
 
 
 if __name__ == "__main__":

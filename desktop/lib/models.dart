@@ -12,6 +12,8 @@ class LibrarySource {
     required this.chunkCount,
     required this.pageCount,
     this.status,
+    this.locationKind,
+    this.originUrl,
   });
 
   factory LibrarySource.fromJson(Map<String, dynamic> json) {
@@ -22,6 +24,8 @@ class LibrarySource {
       chunkCount: json['chunk_count'] as int,
       pageCount: json['page_count'] as int,
       status: json['status'] as String?,
+      locationKind: json['location_kind'] as String?,
+      originUrl: json['origin_url'] as String?,
     );
   }
 
@@ -31,12 +35,21 @@ class LibrarySource {
   final int chunkCount;
   final int pageCount;
   final String? status;
+  final String? locationKind;
+  final String? originUrl;
 
   String get chunkLabel => chunkCount == 1 ? '1 chunk' : '$chunkCount chunks';
 
   String get pageLabel {
     if (pageCount == 0) return '';
-    return pageCount == 1 ? '1 page' : '$pageCount pages';
+    if (locationKind == 'timestamp') {
+      return pageCount == 1 ? '1 cue' : '$pageCount cues';
+    }
+    if (locationKind == 'line') {
+      return pageCount == 1 ? '1 line' : '$pageCount lines';
+    }
+    final unit = locationKind ?? 'page';
+    return pageCount == 1 ? '1 $unit' : '$pageCount ${unit}s';
   }
 }
 
@@ -49,6 +62,8 @@ class AnswerCitation {
     required this.endChar,
     required this.pages,
     required this.quote,
+    this.locationKind,
+    this.originUrl,
   });
 
   factory AnswerCitation.fromJson(Map<String, dynamic> json) {
@@ -60,6 +75,8 @@ class AnswerCitation {
       endChar: json['end_char'] as int,
       pages: (json['pages'] as List<dynamic>).cast<int>(),
       quote: json['quote'] as String,
+      locationKind: json['location_kind'] as String?,
+      originUrl: json['origin_url'] as String?,
     );
   }
 
@@ -70,12 +87,39 @@ class AnswerCitation {
   final int endChar;
   final List<int> pages;
   final String quote;
+  final String? locationKind;
+  final String? originUrl;
 
   String get location {
     final chars = 'characters $startChar–$endChar';
-    if (pages.isEmpty) return chars;
-    if (pages.length == 1) return 'page ${pages.first}, $chars';
-    return 'pages ${pages.first}–${pages.last}, $chars';
+    final parts = <String>[];
+    if (originUrl != null && originUrl!.isNotEmpty) {
+      parts.add(originUrl!);
+    }
+    if (pages.isNotEmpty) {
+      if (locationKind == 'timestamp') {
+        final stamps = pages.map(_formatTimestamp).toList();
+        parts.add(stamps.length == 1 ? stamps.first : '${stamps.first}–${stamps.last}');
+      } else if (locationKind == 'line') {
+        parts.add(pages.length == 1 ? 'line ${pages.first}' : 'lines ${pages.first}–${pages.last}');
+      } else {
+        final unit = locationKind ?? 'page';
+        parts.add(pages.length == 1 ? '$unit ${pages.first}' : '${unit}s ${pages.first}–${pages.last}');
+      }
+    }
+    parts.add(chars);
+    return parts.join(', ');
+  }
+
+  static String _formatTimestamp(int seconds) {
+    final safe = seconds < 0 ? 0 : seconds;
+    final hours = safe ~/ 3600;
+    final minutes = (safe % 3600) ~/ 60;
+    final secs = safe % 60;
+    if (hours > 0) {
+      return '$hours:${minutes.toString().padLeft(2, '0')}:${secs.toString().padLeft(2, '0')}';
+    }
+    return '$minutes:${secs.toString().padLeft(2, '0')}';
   }
 }
 

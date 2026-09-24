@@ -9,16 +9,21 @@ code cannot quietly change it — an attempt raises instead of corrupting a cita
 
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Literal
+
+# What `PageSpan.number` means for this source. Same table, different word in the UI.
+LocationKind = Literal["page", "slide", "paragraph", "timestamp", "line"]
 
 
 @dataclass(frozen=True)
 class PageSpan:
-    """Which part of `Source.text` came from one page of the original document.
+    """Which part of `Source.text` came from one unit of the original document.
 
-    Formats with no pages (`.txt`, `.md`) produce none of these, which is the honest
-    representation: there is no page to cite. `number` is the 1-based physical position in
-    the file, matching the "page 4 of 20" a PDF viewer shows, not the printed page label —
-    front matter numbered in roman numerals would disagree with it (ADR-0024).
+    The unit is a PDF page, a PowerPoint slide, a Word paragraph, a whole second of
+    audio/video, or a source line — see `location_kind_for`. Formats with no units
+    (plain `.txt` / `.md` outside GitHub) produce none of these. `number` is 1-based
+    position in the file for pages/slides/paragraphs/lines (ADR-0024); for timestamps
+    it is seconds from the start of the media (ADR-0032).
     """
 
     number: int
@@ -26,11 +31,46 @@ class PageSpan:
     end_char: int
 
 
-def pages_covering(start_char: int, end_char: int, pages: tuple[PageSpan, ...]) -> tuple[int, ...]:
-    """Page numbers whose spans overlap `[start_char, end_char)`.
+def location_kind_for(path: Path) -> LocationKind | None:
+    """How to label `pages` numbers for this file. None when there are no units."""
+    # Owned GitHub tree copies cite by line (ADR-0034).
+    if "github" in path.parts:
+        return "line"
+    suffix = path.suffix.lower()
+    if suffix == ".pdf":
+        return "page"
+    if suffix == ".pptx":
+        return "slide"
+    if suffix == ".docx":
+        return "paragraph"
+    # `.ytt` is our owned YouTube transcript copy. Media suffixes are recordings.
+    if suffix == ".ytt" or suffix in {
+        ".mp3",
+        ".wav",
+        ".m4a",
+        ".ogg",
+        ".flac",
+        ".aac",
+        ".wma",
+        ".mp4",
+        ".mov",
+        ".webm",
+        ".mkv",
+        ".mpeg",
+        ".mpg",
+        ".m4v",
+    }:
+        return "timestamp"
+    if suffix in {".png", ".jpg", ".jpeg", ".webp", ".tif", ".tiff", ".bmp", ".gif"}:
+        return "page"
+    return None
 
-    A chunk that straddles a page break reports both pages rather than pretending it
-    lives on one. Empty when the source has no pages (plain text, Markdown).
+
+def pages_covering(start_char: int, end_char: int, pages: tuple[PageSpan, ...]) -> tuple[int, ...]:
+    """Unit numbers whose spans overlap `[start_char, end_char)`.
+
+    A chunk that straddles a break reports both units rather than pretending it lives
+    on one. Empty when the source has no units (plain text, Markdown).
     """
     return tuple(
         span.number for span in pages if span.start_char < end_char and span.end_char > start_char
@@ -48,8 +88,11 @@ class Source:
     the same file is ingested again. `content_hash` is SHA-256 of `text` and decides
     whether re-embedding can be skipped (ADR-0019).
 
-    `pages` maps regions of `text` back to pages of the original file, so a citation can
-    say where to look. Empty for formats that have no pages.
+    `pages` maps regions of `text` back to units of the original file (PDF page, slide,
+    or paragraph), so a citation can say where to look. Empty for formats that have none.
+
+    `origin_url` is set when the source was fetched from the web (ADR-0030). File-based
+    sources leave it None.
     """
 
     id: str
@@ -58,6 +101,7 @@ class Source:
     text: str
     content_hash: str
     pages: tuple[PageSpan, ...] = ()
+    origin_url: str | None = None
 
 
 @dataclass(frozen=True)
@@ -113,8 +157,10 @@ class Citation:
     start_char: int
     end_char: int
     quote: str
-    # 1-based physical pages this quote overlaps. Empty for formats that have no pages.
+    # 1-based units this quote overlaps (pages, slides, or paragraphs). Empty when none.
     pages: tuple[int, ...] = ()
+    location_kind: LocationKind | None = None
+    origin_url: str | None = None
 
 
 @dataclass(frozen=True)

@@ -3,6 +3,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 
 import 'api.dart';
+import 'chat_store.dart';
 import 'home_page.dart';
 
 Future<void> main() async {
@@ -18,9 +19,10 @@ Future<void> main() async {
 }
 
 class VoiceLmApp extends StatelessWidget {
-  const VoiceLmApp({super.key, required this.api});
+  const VoiceLmApp({super.key, required this.api, this.store});
 
   final VoiceLmApi api;
+  final ChatStore? store;
 
   @override
   Widget build(BuildContext context) {
@@ -36,7 +38,7 @@ class VoiceLmApp extends StatelessWidget {
           hintStyle: TextStyle(fontFamily: 'SourceSans3', wordSpacing: 4),
         ),
       ),
-      home: HomePage(api: api),
+      home: HomePage(api: api, store: store),
     );
   }
 }

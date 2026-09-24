@@ -45,19 +45,28 @@ class EncryptedPdf(PdfExtractionError):
 
 
 class NoTextLayer(PdfExtractionError):
-    """Parsed fine, but every page was empty — almost always a scan.
+    """Parsed fine, but every page was empty and OCR was not available or also empty.
 
     Worth its own error because the alternative is ingesting a document with no content:
     it would list in `sources`, match nothing, and look like a retrieval bug rather than
-    an unsupported file. OCR would fix it and is deliberately out of scope for Phase 1.
+    an unsupported file. Milestone 2D runs OCR when an engine is supplied (ADR-0033).
     """
 
 
-def extract_pages(path: Path) -> list[str]:
+def extract_pages(
+    path: Path,
+    *,
+    ocr: object | None = None,
+    use_ocr: bool = True,
+) -> list[str]:
     """Return the raw text of each page of `path`, in document order.
 
     Pages that yield nothing come back as empty strings rather than being dropped, so the
     caller can still number the pages that follow them correctly.
+
+    When the text layer is missing (or some pages are blank) and `use_ocr` is true, blank
+    pages are rendered and passed through the OCR engine. Pass `ocr=` to inject a fake in
+    tests; omit it to use the default RapidOCR engine.
     """
     try:
         pages = _read_pdf_pages(path)
@@ -68,13 +77,30 @@ def extract_pages(path: Path) -> list[str]:
     except PyPdfError as error:
         raise CorruptPdf(f"{path.name} could not be read as a PDF: {error}") from error
 
-    if not any(page.strip() for page in pages):
-        raise NoTextLayer(
-            f"{path.name} has no extractable text. Scanned PDFs need OCR, "
-            "which VoiceLM does not do yet."
-        )
+    if any(page.strip() for page in pages) and not (
+        use_ocr and any(not page.strip() for page in pages)
+    ):
+        return pages
 
-    return pages
+    if not use_ocr:
+        if not any(page.strip() for page in pages):
+            raise NoTextLayer(f"{path.name} has no extractable text. Scanned PDFs need OCR.")
+        return pages
+
+    from voicelm.ingestion.ocr import EmptyOcrResult, OcrUnavailable, ocr_pdf_pages
+
+    try:
+        return ocr_pdf_pages(path, engine=ocr, existing=pages)  # type: ignore[arg-type]
+    except OcrUnavailable as error:
+        if not any(page.strip() for page in pages):
+            raise NoTextLayer(
+                f"{path.name} has no extractable text, and OCR is unavailable: {error}"
+            ) from error
+        return pages
+    except EmptyOcrResult as error:
+        if not any(page.strip() for page in pages):
+            raise NoTextLayer(str(error)) from error
+        return pages
 
 
 def _read_pdf_pages(path: Path) -> list[str]:

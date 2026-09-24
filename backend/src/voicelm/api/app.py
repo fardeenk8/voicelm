@@ -15,22 +15,43 @@ from fastapi import Depends, FastAPI, File, HTTPException, Request, UploadFile
 from fastapi.responses import JSONResponse, StreamingResponse
 
 from voicelm import __version__
-from voicelm.api.schemas import AskIn, AskOut, IngestOut, SourceOut, ask_out, ingest_out, source_out
+from voicelm.api.schemas import (
+    AskIn,
+    AskOut,
+    IngestOut,
+    SourceOut,
+    UrlIn,
+    ask_out,
+    ingest_out,
+    source_out,
+)
 from voicelm.domain.models import Answer
 from voicelm.embeddings.ollama import EmbeddingError, OllamaEmbedder
 from voicelm.generation.answering import AnswerToken
 from voicelm.generation.ollama import ChatModel, GenerationError, OllamaChatModel
+from voicelm.ingestion.github import GitHubError
 from voicelm.ingestion.loader import UndecodableFile, UnsupportedFileType
+from voicelm.ingestion.media import MediaTranscriptionError
+from voicelm.ingestion.ocr import OcrError
+from voicelm.ingestion.office import OfficeExtractionError
 from voicelm.ingestion.pdf import PdfExtractionError
+from voicelm.ingestion.web import WebFetchError
+from voicelm.ingestion.youtube import YouTubeError
 from voicelm.knowledge import KnowledgeBase
 from voicelm.paths import default_data_dir
 
-MAX_UPLOAD_BYTES = 50 * 1024 * 1024
+MAX_UPLOAD_BYTES = 200 * 1024 * 1024
 
 ClientError = (
     UnsupportedFileType,
     UndecodableFile,
     PdfExtractionError,
+    OfficeExtractionError,
+    WebFetchError,
+    YouTubeError,
+    GitHubError,
+    MediaTranscriptionError,
+    OcrError,
     FileNotFoundError,
     ValueError,
 )
@@ -94,10 +115,17 @@ def create_app(
     ) -> IngestOut:
         data = file.file.read(MAX_UPLOAD_BYTES + 1)
         if len(data) > MAX_UPLOAD_BYTES:
-            raise HTTPException(status_code=413, detail="file is larger than 50 MB")
+            raise HTTPException(status_code=413, detail="file is larger than 200 MB")
         name = file.filename or ""
         result = base.ingest_upload(name, data)
         return ingest_out(result)
+
+    @app.post("/sources/url")
+    def ingest_url(
+        body: UrlIn,
+        base: Annotated[KnowledgeBase, Depends(_get_base)],
+    ) -> IngestOut:
+        return ingest_out(base.ingest_url(body.url))
 
     @app.delete("/sources/{source_id}", status_code=204)
     def remove_source(

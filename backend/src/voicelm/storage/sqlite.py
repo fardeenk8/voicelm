@@ -26,7 +26,8 @@ CREATE TABLE IF NOT EXISTS sources (
     embedding_model TEXT NOT NULL,
     chunk_max_chars INTEGER NOT NULL,
     chunk_overlap INTEGER NOT NULL,
-    ingested_at TEXT NOT NULL
+    ingested_at TEXT NOT NULL,
+    origin_url TEXT
 );
 
 CREATE TABLE IF NOT EXISTS chunks (
@@ -85,6 +86,17 @@ class SqliteMetadataStore:
         self._conn.execute("PRAGMA foreign_keys = ON")
         self._conn.execute("PRAGMA journal_mode = WAL")
         self._conn.executescript(SCHEMA)
+        self._migrate()
+
+    def _migrate(self) -> None:
+        # Databases created before ADR-0030 lack origin_url. ADD COLUMN is a no-op once
+        # present; CREATE TABLE IF NOT EXISTS does not alter existing tables.
+        columns = {
+            row["name"] for row in self._conn.execute("PRAGMA table_info(sources)").fetchall()
+        }
+        if "origin_url" not in columns:
+            self._conn.execute("ALTER TABLE sources ADD COLUMN origin_url TEXT")
+            self._conn.commit()
 
     def close(self) -> None:
         self._conn.close()
@@ -111,8 +123,8 @@ class SqliteMetadataStore:
                 """
                 INSERT INTO sources (
                     id, path, title, text, content_hash,
-                    embedding_model, chunk_max_chars, chunk_overlap, ingested_at
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    embedding_model, chunk_max_chars, chunk_overlap, ingested_at, origin_url
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 ON CONFLICT(id) DO UPDATE SET
                     path = excluded.path,
                     title = excluded.title,
@@ -121,7 +133,8 @@ class SqliteMetadataStore:
                     embedding_model = excluded.embedding_model,
                     chunk_max_chars = excluded.chunk_max_chars,
                     chunk_overlap = excluded.chunk_overlap,
-                    ingested_at = excluded.ingested_at
+                    ingested_at = excluded.ingested_at,
+                    origin_url = excluded.origin_url
                 """,
                 (
                     source.id,
@@ -133,6 +146,7 @@ class SqliteMetadataStore:
                     meta.chunk_max_chars,
                     meta.chunk_overlap,
                     ingested_at,
+                    source.origin_url,
                 ),
             )
             self._conn.execute("DELETE FROM chunks WHERE source_id = ?", (source.id,))
@@ -210,6 +224,8 @@ class SqliteMetadataStore:
         return [by_id[chunk_id] for chunk_id in ids]
 
     def _record_from_row(self, row: sqlite3.Row) -> SourceRecord:
+        keys = row.keys()
+        origin = row["origin_url"] if "origin_url" in keys else None
         source = Source(
             id=row["id"],
             path=Path(row["path"]),
@@ -217,6 +233,7 @@ class SqliteMetadataStore:
             text=row["text"],
             content_hash=row["content_hash"],
             pages=self._pages_for(row["id"]),
+            origin_url=origin,
         )
         return SourceRecord(
             source=source,

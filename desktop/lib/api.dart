@@ -46,13 +46,18 @@ class VoiceLmApi {
     }
   }
 
+  Future<LibrarySource> ingestUrl(String url) async {
+    final body = await _post('/sources/url', {'url': url});
+    return LibrarySource.fromJson(body as Map<String, dynamic>);
+  }
+
   Future<void> remove(String id) async {
     final response = await _client.delete(_uri('/sources/$id'));
     if (response.statusCode == 204) return;
     throw ApiException(response.statusCode, _detail(response));
   }
 
-  Future<GroundedAnswer> ask(String question, {int topK = 5}) async {
+  Future<GroundedAnswer> ask(String question, {int topK = 10}) async {
     final body = await _post('/ask', {'question': question, 'top_k': topK});
     return GroundedAnswer.fromJson(body as Map<String, dynamic>);
   }
@@ -61,7 +66,7 @@ class VoiceLmApi {
   ///
   /// `POST /ask` is still available for clients that want one JSON blob.
   /// The desktop screen uses this stream so the answer is not a spinner.
-  Stream<AskStreamEvent> askStream(String question, {int topK = 5}) async* {
+  Stream<AskStreamEvent> askStream(String question, {int topK = 10}) async* {
     try {
       final request = http.Request('POST', _uri('/ask/stream'))
         ..headers['Content-Type'] = 'application/json'

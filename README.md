@@ -7,13 +7,11 @@ Everything runs locally. Your documents never leave your machine.
 
 ## Status
 
-**Milestone 1F — answers stream into the macOS window.** Import `.txt`, `.md`, or `.pdf`
-from the CLI, the HTTP API, or the Flutter desktop app. `POST /ask` still returns one
-JSON blob; the desktop screen uses `POST /ask/stream` so tokens appear as the model
-writes them. Citations arrive on the final `done` event. The UI talks only to
-`http://127.0.0.1:8000`.
-
-Not yet: scanned PDFs (no OCR) or voice.
+**Milestone 2E — GitHub repositories.** Paste a `github.com` URL (repo, `/tree/…`, or
+`/blob/…`) via CLI `--url`, `POST /sources/url`, or the desktop Add link / + menu. The
+backend downloads a zipball, indexes text/code files as separate sources, and cites
+**path + line** with a blob URL. Private repos need `VOICELM_GITHUB_TOKEN` or
+`GITHUB_TOKEN`. Phase 2 multimodal ingest is complete; voice conversation is Phase 3.
 
 See [`docs/PRODUCT_SPEC.md`](docs/PRODUCT_SPEC.md) for where this is going and
 [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) for how it is put together.

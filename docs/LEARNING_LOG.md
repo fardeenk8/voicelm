@@ -620,6 +620,25 @@ that into `event: token` frames. The desktop parser never sees Ollama; it only
 knows our three event names. That is the same "one doorway" rule as
 `KnowledgeBase`: Flutter does not import an Ollama client.
 
+---
+
+## Milestone 2E — GitHub repositories (2026-09-23)
+
+### Zipball beats clone
+A full `git clone` needs a binary, a `.git` directory we would only delete, and more
+moving parts for private auth. GitHub's zipball is one authenticated GET and a
+stdlib `zipfile` extract — the same "backend fetches, we own the bytes" pattern as
+web pages and YouTube.
+
+### One Source per file
+A monorepo is not one document. Citing `owner/repo:src/foo.py` line 42 is honest;
+pasting every file into a single blob would make titles and line numbers lie. The
+Library list gets noisier; that is the trade we take for verifiable citations.
+
+### Caps are product, not bugs
+`node_modules`, build dirs, and 40 MB of text are refused or skipped on purpose.
+Without caps, a casual paste of a large repo would hang the Mac and fill the
+vector store with lockfile noise.
 
 
 

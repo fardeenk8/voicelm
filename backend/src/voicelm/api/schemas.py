@@ -8,7 +8,7 @@ from typing import Literal
 
 from pydantic import BaseModel, Field
 
-from voicelm.domain.models import Answer, Citation
+from voicelm.domain.models import Answer, Citation, location_kind_for
 from voicelm.knowledge import IngestResult
 from voicelm.storage.sqlite import SourceRecord
 
@@ -18,7 +18,10 @@ class SourceOut(BaseModel):
     title: str
     path: str
     chunk_count: int
+    # Count of location units (PDF pages, slides, or paragraphs). 0 for plain text / web.
     page_count: int
+    location_kind: Literal["page", "slide", "paragraph", "timestamp", "line"] | None = None
+    origin_url: str | None = None
 
 
 class IngestOut(SourceOut):
@@ -33,11 +36,17 @@ class CitationOut(BaseModel):
     end_char: int
     pages: list[int]
     quote: str
+    location_kind: Literal["page", "slide", "paragraph", "timestamp", "line"] | None = None
+    origin_url: str | None = None
 
 
 class AskIn(BaseModel):
     question: str
-    top_k: int = Field(default=5, ge=1, le=20)
+    top_k: int = Field(default=10, ge=1, le=20)
+
+
+class UrlIn(BaseModel):
+    url: str
 
 
 class AskOut(BaseModel):
@@ -54,6 +63,8 @@ def source_out(record: SourceRecord, chunk_count: int) -> SourceOut:
         path=str(record.source.path),
         chunk_count=chunk_count,
         page_count=len(record.source.pages),
+        location_kind=location_kind_for(record.source.path),
+        origin_url=record.source.origin_url,
     )
 
 
@@ -65,6 +76,8 @@ def ingest_out(result: IngestResult) -> IngestOut:
         chunk_count=result.chunk_count,
         page_count=len(result.source.pages),
         status=result.status,
+        location_kind=location_kind_for(result.source.path),
+        origin_url=result.source.origin_url,
     )
 
 
@@ -77,6 +90,8 @@ def citation_out(citation: Citation) -> CitationOut:
         end_char=citation.end_char,
         pages=list(citation.pages),
         quote=citation.quote,
+        location_kind=citation.location_kind,
+        origin_url=citation.origin_url,
     )
 
 
